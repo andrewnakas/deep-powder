@@ -96,7 +96,18 @@ def _gfsx2(keep: tuple[str, ...]):
     return f
 
 
+def _hrrx(drop: tuple[str, ...] = ()):
+    """Hourly HRRR 24 h features (hrrx.py) on top of the adopted set."""
+    def f(df):
+        from .. import hrrx
+
+        return {"df": hrrx.join(df), "extra": ("hrrx_",), "drop": tuple(f"hrrx_{d}" for d in drop)}
+    return f
+
+
 VARIANTS = {
+    "hrrx": _hrrx(),
+    "hrrx_amount": _hrrx(drop=("first12", "last12", "pre12", "post6", "peak3", "hours")),
     "gfsx2": _gfsx2(("pre6", "pre24", "post12", "first6", "last6", "last24", "liq_pre12", "rain", "t_first12",
                      "t_last12")),
     "gfsx2_edges": _gfsx2(("pre6", "pre24", "post12", "first6", "last6", "last24")),

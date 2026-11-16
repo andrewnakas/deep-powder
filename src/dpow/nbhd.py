@@ -176,13 +176,17 @@ TIMING = ("first12", "last12", "pre12", "post6", "peak6", "hours")
 
 def join(df: pd.DataFrame) -> pd.DataFrame:
     """Left-join the harvested features (the `nbhd` release) onto a training table."""
+    return join_files(df, FILES, PREFIX, "hourly-GFS")
+
+
+def join_files(df: pd.DataFrame, files: str, prefix: str, label: str) -> pd.DataFrame:
     from . import WORK, store
 
     dest = WORK / TAG
-    store.pull(TAG, dest, f"{FILES}__*.parquet")
-    df = df.drop(columns=[c for c in df.columns if c.startswith(f"{PREFIX}_")])
+    store.pull(TAG, dest, f"{files}__*.parquet")
+    df = df.drop(columns=[c for c in df.columns if c.startswith(f"{prefix}_")])
     parts = []
-    for f in sorted(dest.glob(f"{FILES}__*.parquet")):
+    for f in sorted(dest.glob(f"{files}__*.parquet")):
         g = pd.read_parquet(f)
         g["league"] = f.stem.split("__")[1]
         parts.append(g)
@@ -193,5 +197,5 @@ def join(df: pd.DataFrame) -> pd.DataFrame:
     g = g.drop_duplicates(["league", "station_id", "round_date", "horizon_h"], keep="last")
     key = pd.to_datetime(df["round_date"]).dt.date
     out = df.assign(round_date=key).merge(g, on=["league", "station_id", "round_date", "horizon_h"], how="left")
-    print(f"  nbhd: {out[f'{PREFIX}_ctr'].notna().mean():.0%} of rows have the hourly-GFS features", flush=True)
+    print(f"  {label}: {out[f'{prefix}_ctr'].notna().mean():.0%} of rows have the features", flush=True)
     return out

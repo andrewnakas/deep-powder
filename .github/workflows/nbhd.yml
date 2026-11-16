@@ -12,6 +12,9 @@ on:
       seasons:
         description: "JSON list of seasons"
         default: "[2022, 2023, 2024, 2025, 2026]"
+      source:
+        description: "gfs or hrrr"
+        default: gfs
 
 permissions:
   contents: write
@@ -32,4 +35,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: dpow nbhd --league "${{ matrix.league }}" --season "${{ matrix.season }}" --minutes 300
+      - run: dpow nbhd --league "${{ matrix.league }}" --season "${{ matrix.season }}" --minutes 300 --source "${{ inputs.source }}"
