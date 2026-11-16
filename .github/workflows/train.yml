@@ -1,0 +1,30 @@
+# The reference bundle: one LightGBM quantile model per league group, as in
+# open-powder-ensemble. It is the fallback tier and the yardstick; promoted only
+# through the backtest gate (see `dpow train` / cli._better). Manual until the
+# entry goes live.
+name: Train
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340  # nh takes ~3 h on a normal runner; a slow one ran past 240 on 11-15
+    strategy:
+      fail-fast: false
+      matrix:
+        bundle: [nh, era5, resorts, resorts-na]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Train ${{ matrix.bundle }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: dpow train --bundle ${{ matrix.bundle }}
