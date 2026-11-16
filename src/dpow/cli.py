@@ -468,7 +468,8 @@ def nbhd(league: str = typer.Option(...), season: int = typer.Option(...),
     if not (store.TABLE / name).exists():
         _summary(f"nbhd {league} {season}: no table file")
         return
-    dates = sorted(set(pd.to_datetime(pd.read_parquet(store.TABLE / name, columns=["round_date"])["round_date"]).dt.date))
+    rd = pd.read_parquet(store.TABLE / name, columns=["round_date"])["round_date"]
+    dates = sorted(set(pd.to_datetime(rd).dt.date))
     dest = store.WORK / nb.TAG
     f = dest / nb.asset(league, season)
     store.pull(nb.TAG, dest, f.name)

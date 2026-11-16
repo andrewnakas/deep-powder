@@ -59,7 +59,8 @@ def _read(init: pd.Timestamp, st: pd.DataFrame, retries: int = 5):
     inv = inv.reshape(flat.shape).T  # (n, 9)
     sub = (ds[["precipitation_surface", "temperature_2m", "percent_frozen_precipitation_surface"]]
            .sel(init_time=np.datetime64(init)).isel(lead_time=slice(0, N_LEAD))
-           .isel(latitude=xr.DataArray(uniq // len(glon), dims="pt"), longitude=xr.DataArray(uniq % len(glon), dims="pt")))
+           .isel(latitude=xr.DataArray(uniq // len(glon), dims="pt"),
+                 longitude=xr.DataArray(uniq % len(glon), dims="pt")))
     for attempt in range(retries):
         try:
             v = sub.load()
