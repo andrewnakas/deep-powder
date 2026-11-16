@@ -23,19 +23,21 @@ import pandas as pd
 
 from .. import QUANTILES
 
-OUT_Q = ("nn_q10", "nn_q25", "nn_q50", "nn_q75", "nn_q90")
-OUT_WET = "nn_wet"
+QNAMES = ("q10", "q25", "q50", "q75", "q90")
 WET_IN = 0.05
-HIDDEN = (512, 256, 128)
-EMB = 16
-EMB_DROP = 0.15
-DROPOUT = 0.1
 BATCH = 4096
-LR = 1e-3
-PCT_START = 0.1  # short warm-up: with 0.3 the rate was still rising when validation turned (2026-11-16)
 MAX_EPOCHS = 20
 PATIENCE = 4
-WET_LOSS = 0.3
+HIDDEN = (512, 256, 128)
+# Settings a variant may override (learners.Spec.net)
+DEFAULTS = dict(emb=16, emb_drop=0.15, dropout=0.1, lr=1e-3, weight_decay=1e-5, wet_loss=0.3,
+                pct_start=0.1)  # short warm-up: with 0.3 the rate was still rising when validation turned
+OUT_Q = tuple(f"nn_{q}" for q in QNAMES)
+OUT_WET = "nn_wet"
+
+
+def out_cols(prefix: str = "nn") -> tuple[tuple[str, ...], str]:
+    return tuple(f"{prefix}_{q}" for q in QNAMES), f"{prefix}_wet"
 
 
 def _slog(x: np.ndarray) -> np.ndarray:
@@ -43,38 +45,50 @@ def _slog(x: np.ndarray) -> np.ndarray:
 
 
 class Scaler:
-    """Signed log, then mean/sd of the training rows; NaN -> 0 with a mask."""
+    """Signed log, then mean/sd of the training rows; NaN -> 0 with a 0/1
+    "missing" input per feature. Works column by column: a second full copy
+    of a 2.7M-row table is what took the training job to the runner's limit."""
 
-    def __init__(self, X: np.ndarray):
-        Z = _slog(X)
-        self.mu = np.nan_to_num(np.nanmean(Z, axis=0))
-        sd = np.nan_to_num(np.nanstd(Z, axis=0))
-        self.sd = np.where(sd > 1e-6, sd, 1.0)
+    def __init__(self, df: pd.DataFrame, feats: list[str]):
+        mu, sd = [], []
+        for c in feats:
+            z = _slog(df[c].to_numpy(np.float32))
+            mu.append(np.nanmean(z) if np.isfinite(z).any() else 0.0)
+            v = np.nanstd(z) if np.isfinite(z).any() else 0.0
+            sd.append(v if v > 1e-6 else 1.0)
+        self.mu, self.sd = np.asarray(mu, np.float32), np.asarray(sd, np.float32)
 
-    def __call__(self, X: np.ndarray) -> np.ndarray:
-        Z = (_slog(X) - self.mu) / self.sd
-        miss = np.isnan(Z)
-        return np.concatenate([np.where(miss, 0.0, np.clip(Z, -8, 8)), miss], axis=1).astype(np.float32)
+    def __call__(self, df: pd.DataFrame, feats: list[str]) -> np.ndarray:
+        n = len(feats)
+        out = np.zeros((len(df), 2 * n), np.float32)
+        for j, c in enumerate(feats):
+            z = df[c].to_numpy(np.float32) if c in df else np.full(len(df), np.nan, np.float32)
+            z = (_slog(z) - self.mu[j]) / self.sd[j]
+            miss = np.isnan(z)
+            out[:, j] = np.where(miss, 0.0, np.clip(z, -8, 8))
+            out[:, n + j] = miss
+        return out
 
 
-def _net(n_in: int, n_stations: int):
+def _net(n_in: int, n_stations: int, cfg: dict):
     import torch
     from torch import nn
 
     class Net(nn.Module):
         def __init__(self):
             super().__init__()
-            self.emb = nn.Embedding(n_stations + 1, EMB)  # 0 = unknown station
-            layers, d = [], n_in + EMB
+            self.emb = nn.Embedding(n_stations + 1, cfg["emb"])  # 0 = unknown station
+            layers, d = [], n_in + cfg["emb"]
             for h in HIDDEN:
-                layers += [nn.Linear(d, h), nn.SiLU(), nn.Dropout(DROPOUT)]
+                layers += [nn.Linear(d, h), nn.SiLU(), nn.Dropout(cfg["dropout"])]
                 d = h
             self.body = nn.Sequential(*layers)
             self.head = nn.Linear(d, len(QUANTILES) + 1)
 
         def forward(self, x, sid):
             if self.training:  # so the unknown vector is a trained one
-                sid = torch.where(torch.rand_like(sid, dtype=torch.float32) < EMB_DROP, torch.zeros_like(sid), sid)
+                drop = torch.rand_like(sid, dtype=torch.float32) < cfg["emb_drop"]
+                sid = torch.where(drop, torch.zeros_like(sid), sid)
             out = self.head(self.body(torch.cat([x, self.emb(sid)], dim=1)))
             return out[:, :-1], out[:, -1]
 
@@ -103,21 +117,24 @@ class Fitted:
     ids: dict
     state: dict  # name -> numpy array
     epochs: int = 0
+    cfg: dict | None = None
+    prefix: str = "nn"
 
     def predict(self, X: pd.DataFrame) -> dict:
         import torch
 
-        x = X.reindex(columns=self.features).to_numpy(np.float32)
-        Z = self.scaler(x)
+        Z = self.scaler(X, self.features)
         sid = X["station_id"].map(self.ids).fillna(0).to_numpy(np.int64)
-        model = _net(Z.shape[1], len(self.ids))
+        model = _net(Z.shape[1], len(self.ids), {**DEFAULTS, **(self.cfg or {})})
         model.load_state_dict({k: torch.from_numpy(v) for k, v in self.state.items()})
         q, w = _forward(model, Z, sid)
-        return {**{c: q[:, k] for k, c in enumerate(OUT_Q)}, OUT_WET: w}
+        qc, wc = out_cols(self.prefix)
+        return {**{c: q[:, k] for k, c in enumerate(qc)}, wc: w}
 
 
 def train(tr: pd.DataFrame, feats: list[str], weight=None, va: pd.DataFrame | None = None, va_weight=None,
-          epochs: int | None = None, seed: int = 0, verbose: bool = True) -> Fitted:
+          epochs: int | None = None, seed: int = 0, verbose: bool = True, cfg: dict | None = None,
+          prefix: str = "nn") -> Fitted:
     """With `va`: train up to MAX_EPOCHS, keep the epoch with the lowest
     weighted MAE of the median on it. With `epochs` (and no `va`): train that
     many, as the final fit on all seasons does."""
@@ -125,25 +142,26 @@ def train(tr: pd.DataFrame, feats: list[str], weight=None, va: pd.DataFrame | No
 
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
-    scaler = Scaler(tr[feats].to_numpy(np.float32))
-    Xt = scaler(tr[feats].to_numpy(np.float32))
+    c = {**DEFAULTS, **(cfg or {})}
+    scaler = Scaler(tr, feats)
+    Xt = scaler(tr, feats)
     ids = {s: i + 1 for i, s in enumerate(sorted(tr["station_id"].unique()))}
     st = tr["station_id"].map(ids).to_numpy(np.int64)
     yt = tr["truth_in"].to_numpy(np.float32)
     wt = np.ones(len(tr), np.float32) if weight is None else np.asarray(weight, np.float32)
     if va is not None:
-        Xv = scaler(va[feats].to_numpy(np.float32))
+        Xv = scaler(va, feats)
         sv = va["station_id"].map(ids).fillna(0).to_numpy(np.int64)
         yv = va["truth_in"].to_numpy(np.float64)
         wv = np.ones(len(va)) if va_weight is None else np.asarray(va_weight, float)
     n_epochs = MAX_EPOCHS if va is not None else int(epochs or MAX_EPOCHS)
 
-    model = _net(Xt.shape[1], len(ids))
-    opt = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-5)
+    model = _net(Xt.shape[1], len(ids), c)
+    opt = torch.optim.AdamW(model.parameters(), lr=c["lr"], weight_decay=c["weight_decay"])
     # the schedule is the same whatever the stopping epoch, so a final fit
     # for n epochs retraces the first n epochs of a validated run
     steps = MAX_EPOCHS * int(np.ceil(len(tr) / BATCH))
-    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=LR, total_steps=steps, pct_start=PCT_START)
+    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=c["lr"], total_steps=steps, pct_start=c["pct_start"])
     alphas = torch.tensor(QUANTILES, dtype=torch.float32)
     tX, tS = torch.from_numpy(Xt), torch.from_numpy(st)
     tY, tW = torch.from_numpy(np.log1p(yt)), torch.from_numpy(wt)
@@ -158,7 +176,7 @@ def train(tr: pd.DataFrame, feats: list[str], weight=None, va: pd.DataFrame | No
             q, w = model(tX[b], tS[b])
             d = tY[b].unsqueeze(1) - q
             pin = torch.maximum(alphas * d, (alphas - 1) * d).mean(dim=1)
-            loss = ((pin + WET_LOSS * bce(w, tWet[b])) * tW[b]).sum() / tW[b].sum()
+            loss = ((pin + c["wet_loss"] * bce(w, tWet[b])) * tW[b]).sum() / tW[b].sum()
             opt.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
@@ -180,13 +198,14 @@ def train(tr: pd.DataFrame, feats: list[str], weight=None, va: pd.DataFrame | No
     if best_state is not None:
         model.load_state_dict(best_state)
     state = {k: v.detach().numpy().copy() for k, v in model.state_dict().items()}
-    return Fitted(list(feats), scaler, ids, state, best_epoch)
+    return Fitted(list(feats), scaler, ids, state, best_epoch, cfg, prefix)
 
 
 def fit_predict(tr: pd.DataFrame, va: pd.DataFrame, feats: list[str], weight=None, va_weight=None,
-                seed: int = 0, verbose: bool = True, rounds: dict | None = None) -> dict:
+                seed: int = 0, verbose: bool = True, rounds: dict | None = None, cfg: dict | None = None,
+                prefix: str = "nn") -> dict:
     """Fit on `tr`, stop on `va` (weighted MAE of the median), predict `va`."""
-    m = train(tr, feats, weight, va, va_weight, seed=seed, verbose=verbose)
+    m = train(tr, feats, weight, va, va_weight, seed=seed, verbose=verbose, cfg=cfg, prefix=prefix)
     if rounds is not None:
         rounds.setdefault("epochs", []).append(m.epochs)
     return m.predict(va)

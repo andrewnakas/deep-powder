@@ -46,6 +46,7 @@ class Spec:
     kind: str  # quantile | binary | tweedie | net
     outputs: tuple[tuple[str, float], ...]  # (column, alpha or threshold)
     ens_only: bool = False
+    net: tuple = ()  # neural-net settings to override, as (name, value) pairs
 
 
 LEARNERS: dict[str, Spec] = {
@@ -56,6 +57,10 @@ LEARNERS: dict[str, Spec] = {
     "tweedie": Spec("tweedie", (("mean", 1.3),)),
     "q50_ens": Spec("quantile", (("q50_ens", 0.5),), ens_only=True),
     "nn": Spec("net", ()),
+    # variants of the net under test (each writes <name>_q10..q90, <name>_wet)
+    "nn_reg": Spec("net", (), net=(("dropout", 0.25), ("weight_decay", 1e-3), ("emb_drop", 0.3), ("lr", 5e-4))),
+    "nn_noemb": Spec("net", (), net=(("emb_drop", 1.0),)),
+    "nn_slow": Spec("net", (), net=(("lr", 3e-4), ("dropout", 0.2))),
 }
 
 
@@ -118,7 +123,7 @@ def oof(df: pd.DataFrame, name: str, params: dict | None = None, folds: list | N
             from . import net
 
             pred = net.fit_predict(tr, va, feats, weight=gbm.row_weight(tr), va_weight=gbm.row_weight(va),
-                                   rounds=rounds)
+                                   rounds=rounds, cfg=dict(spec.net), prefix=name)
         else:
             pred = fit_predict(tr, va, feats, spec, params, rounds)
         del tr
@@ -159,7 +164,7 @@ def fit_final(df: pd.DataFrame, name: str, info: dict) -> Final:
         from . import net
 
         epochs = max(1, int(round(float(np.mean(info["rounds"]["epochs"])))))
-        models = {"net": net.train(df, feats, weight=w, epochs=epochs)}
+        models = {"net": net.train(df, feats, weight=w, epochs=epochs, cfg=dict(spec.net), prefix=name)}
     else:
         models, ds = {}, None
         for col, value in spec.outputs:
