@@ -60,6 +60,7 @@ def due(league: list[str] | None = LeaguesOpt):
 def run(
     league: list[str] | None = LeaguesOpt,
     dry_run: bool = typer.Option(False, help="Build and validate, don't submit"),
+    shadow: bool = typer.Option(False, help="Build, validate and save to history/, but don't submit"),
     force: bool = typer.Option(False, help="Treat every open round as due (still deadline-guarded)"),
     network: bool = typer.Option(True, help="Also forecast non-featured network stations"),
     budget: float = typer.Option(8000, help="Open-Meteo weighted-call budget for this run"),
@@ -70,7 +71,7 @@ def run(
 
     from . import predict, schedule, submit
 
-    on_up = None if dry_run else (lambda r: submit.upstream_file(r) is not None)
+    on_up = None if dry_run or shadow else (lambda r: submit.upstream_file(r) is not None)
     acts = schedule.due(leagues=league, force=force, on_upstream=on_up)
     if not acts:
         print("nothing due")
@@ -102,6 +103,9 @@ def run(
             hist.parent.mkdir(parents=True, exist_ok=True)
             res.raw.round(3).to_csv(hist, index=False)
             predict.save_features(res, hist.with_suffix(".features.parquet"), reason=a.reason)
+            if shadow:
+                _summary(line + " · SHADOW (saved, not submitted)")
+                continue
             st = schedule.load_state(r)
             cyc = schedule.latest_cycle(datetime.now(timezone.utc))
             note = (f"Model: {res.info['bundle'] or 'tier-0 ensemble'} · GEFS {res.info.get('gefs_init')}Z, "
