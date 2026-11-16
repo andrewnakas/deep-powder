@@ -105,7 +105,21 @@ def _hrrx(drop: tuple[str, ...] = ()):
     return f
 
 
+def _calib(keep: str = "all"):
+    """Per-station, per-model ratios from earlier seasons (calib.py)."""
+    def f(df):
+        from .. import calib
+
+        d = calib.add_history(df)
+        drop = {"all": (), "adj": ("ratio__",), "ratio": ("adj__", "adj_mean", "adj_med")}[keep]
+        return {"df": d, "drop": drop}
+    return f
+
+
 VARIANTS = {
+    "calib": _calib(),
+    "calib_adj": _calib("adj"),
+    "calib_ratio": _calib("ratio"),
     "hrrx": _hrrx(),
     "hrrx_amount": _hrrx(drop=("first12", "last12", "pre12", "post6", "peak3", "hours")),
     "gfsx2": _gfsx2(("pre6", "pre24", "post12", "first6", "last6", "last24", "liq_pre12", "rain", "t_first12",
