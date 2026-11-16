@@ -131,7 +131,8 @@ def test_neural_net_learns_the_ratio_and_handles_unknown_stations(monkeypatch):
     df.loc[df.index[::7], "gefs_snow_mean"] = np.nan  # missing inputs are handled
     tr, va = df[df.season != 2025], df[df.season == 2025].copy()
     va.loc[va.station_id == "C", "station_id"] = "never-seen"
-    out = net.fit_predict(tr, va, ["ref_snow", "gefs_snow_mean", "slr__m1"], verbose=False)
+    out = net.fit_predict(tr, va, ["ref_snow", "gefs_snow_mean", "slr__m1"], verbose=False,
+                          cfg={"lr": 2e-3, "dropout": 0.1})  # a few hundred rows: the production rate is too slow
     q = np.column_stack([out[c] for c in net.OUT_Q])
     assert np.isfinite(q).all() and (np.diff(q, axis=1) >= 0).all()
     mae_nn = np.abs(out["nn_q50"] - va["truth_in"]).mean()
