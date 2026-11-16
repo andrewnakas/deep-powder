@@ -27,9 +27,9 @@ Per league and horizon, fitted on featured out-of-fold rows:
 1. a convex blend of the level-1 point forecasts by mean absolute error, moved off the LightGBM
    median only in steps that each buy a real gain, and shrunk back toward it when round dates are few;
 2. a dry rule: rows whose chance of any snow is below a threshold go to zero. The threshold is
-   picked on the board rule and only accepted if the pooled score falls by no more than 0.3;
+   picked on the board rule and only accepted if the pooled score falls by no more than 0.1;
 3. interval scaling: level-1 quantiles are re-centred on the blended median and their distance
-   from it is scaled to nominal coverage.
+   from it is scaled, per level, to the lowest pinball loss.
 
 The reported score of the stack is nested: the stacker that predicts a season never saw it.
 

@@ -11,9 +11,9 @@ Fitted per (league, horizon) cell, on featured rows, in three steps:
    The threshold is chosen on the board score (mean of per-round scores),
    where a small forecast on a dry round is expensive, and is only accepted
    if the pooled score does not fall by more than POOLED_SLACK.
+   (Out of fold the rule raises the pooled score too: +0.5, 2026-11-16.)
 3. Intervals. The level-1 quantiles are re-centred on the blended median and
-   their distance from it is scaled so each level covers its nominal share
-   of the fitting rows.
+   their distance from it is scaled, per level, to the lowest pinball loss.
 
 `evaluate` is nested: the stacker that predicts a fold season is fitted on the
 other fold seasons only.
@@ -34,12 +34,12 @@ POINT_SOURCES = ("q50", "mean", "q50_ens", "nn_q50", "ref_snow", "cons_snow")
 WET_SOURCES = ("p_wet", "nn_wet")
 QSRC = {0.1: "q10", 0.25: "q25", 0.5: "q50", 0.75: "q75", 0.9: "q90"}
 STEP = 0.05
-MIN_STEP_GAIN = 0.002  # each move must cut MAE by this share
+MIN_STEP_GAIN = 0.0  # a move only has to cut MAE (a 0.2% floor cost 0.8 pooled points out of fold, 2026-11-16)
 ROUND_K = 30.0  # round dates of pseudo-evidence for "all weight on the anchor"
 MIN_COVER = 0.9  # a source must exist on this share of a cell's rows
 MIN_ROWS = 300
-TAUS = tuple(np.round(np.arange(0.0, 0.61, 0.05), 2))
-POOLED_SLACK = 0.3
+TAUS = tuple(np.round(np.arange(0.0, 0.91, 0.05), 2))
+POOLED_SLACK = 0.1
 BOARD_MIN_GAIN = 0.5  # board points a threshold must buy to be used
 
 
@@ -123,20 +123,23 @@ def _dry(g: pd.DataFrame, point: np.ndarray) -> tuple[str | None, float]:
 
 
 def _scale(g: pd.DataFrame, point: np.ndarray) -> dict[float, float]:
-    """Per level, the multiplier on (quantile - median) that gives nominal coverage."""
+    """Per level, the multiplier on (quantile - median) with the lowest pinball
+    loss around the final point forecast. 1.0 is in the grid, so on the fitting
+    rows this never loses to the level-1 spread."""
     out = {}
     y, mid = g["truth_in"].to_numpy(), g[ANCHOR].to_numpy()
-    grid = np.linspace(0.4, 2.5, 43)
+    grid = np.round(np.arange(0.4, 2.01, 0.1), 2)
     for a in QUANTILES:
         col = QSRC[a]
         if a == 0.5 or col not in g or g[col].isna().all():
             continue
-        dist = g[col].to_numpy() - mid
-        ok = ~np.isnan(dist) & (np.abs(dist) > 0.02)
-        if ok.sum() < 100:
-            continue
-        cov = np.array([(y[ok] <= np.clip(point[ok] + s * dist[ok], 0, None)).mean() for s in grid])
-        out[a] = float(grid[np.argmin(np.abs(cov - a))])
+        dist = np.nan_to_num(g[col].to_numpy() - mid)
+        dist = np.minimum(dist, 0.0) if a < 0.5 else np.maximum(dist, 0.0)
+        loss = []
+        for s in grid:
+            d = y - np.clip(point + s * dist, 0, None)
+            loss.append(np.maximum(a * d, (a - 1) * d).mean())
+        out[a] = float(grid[int(np.argmin(loss))])
     return out
 
 
@@ -174,7 +177,7 @@ def predict(st: Stacker, df: pd.DataFrame) -> pd.DataFrame:
                 continue
             dist = np.nan_to_num(g[col].to_numpy(float) - mid) * c.scale.get(a, 1.0)
             dist = np.minimum(dist, 0.0) if a < 0.5 else np.maximum(dist, 0.0)
-            q[:, k] = np.where(dry & (a < 0.5), 0.0, point + dist)
+            q[:, k] = point + dist
         q = np.clip(q, 0.0, 200.0)
         q[:, 1] = np.minimum(q[:, 1], q[:, 2])
         q[:, 0] = np.minimum(q[:, 0], q[:, 1])
