@@ -43,7 +43,7 @@ def det_column(c: str) -> bool:
 
 @dataclass(frozen=True)
 class Spec:
-    kind: str  # quantile | binary | tweedie
+    kind: str  # quantile | binary | tweedie | net
     outputs: tuple[tuple[str, float], ...]  # (column, alpha or threshold)
     ens_only: bool = False
 
@@ -55,6 +55,7 @@ LEARNERS: dict[str, Spec] = {
     "hurdle": Spec("binary", (("p_wet", WET_IN), ("p_ge1", 1.0), ("p_ge6", 6.0))),
     "tweedie": Spec("tweedie", (("mean", 1.3),)),
     "q50_ens": Spec("quantile", (("q50_ens", 0.5),), ens_only=True),
+    "nn": Spec("net", ()),
 }
 
 
@@ -101,11 +102,16 @@ def oof(df: pd.DataFrame, name: str, params: dict | None = None, folds: list | N
     parts = []
     for s in folds:
         is_va = (df["season"] == s).to_numpy()
-        tr = df.loc[~is_va, [*feats, "truth_in", "featured"]]
+        tr = df.loc[~is_va, [*feats, "truth_in", "featured", "station_id"]]
         va = df.loc[is_va]
         if tr.empty or va.empty:
             continue
-        pred = fit_predict(tr, va, feats, spec, params)
+        if spec.kind == "net":
+            from . import net
+
+            pred = net.fit_predict(tr, va, feats, weight=gbm.row_weight(tr), va_weight=gbm.row_weight(va))
+        else:
+            pred = fit_predict(tr, va, feats, spec, params)
         del tr
         parts.append(va[KEYS].assign(fold=str(s), **pred))
         print(f"  {name} fold {s}: {len(va)} rows, {len(feats)} features", flush=True)

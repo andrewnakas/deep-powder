@@ -47,6 +47,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+      - name: PyTorch (CPU build) for the neural net
+        if: matrix.learner == 'nn'
+        run: pip install -q torch --index-url https://download.pytorch.org/whl/cpu
       - run: dpow oof --bundle "$BUNDLE" --learner "${{ matrix.learner }}"
 
   stack:

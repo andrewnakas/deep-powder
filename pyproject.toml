@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "deep-powder"
 version = "0.1.0"
-description = "Open-source ML research entry in PowderBench: GEFS + ECMWF ENS ensemble features, upper-air snow physics, stacked on the public baselines; fully automated on GitHub Actions."
+description = "Research entry in PowderBench: a two-level stack (LightGBM quantiles, hurdle classifiers, neural net, per-league blend) on ensemble and multi-model features."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -31,6 +31,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 terrain = ["rasterio>=1.3"]
+nn = ["torch>=2.2"]
 
 [project.scripts]
 dpow = "dpow.cli:app"

@@ -117,3 +117,24 @@ def test_ensemble_only_learner_leaves_out_the_open_meteo_block():
     feats = learners.features_for(df, learners.LEARNERS["q50_ens"])
     assert "gefs_snow_mean" in feats and not {"slr__m1", "cons_slr", "nmod", "ref_snow"} & set(feats)
     assert {"slr__m1", "cons_slr"} <= set(learners.features_for(df, learners.LEARNERS["q50"]))
+
+
+def test_neural_net_learns_the_ratio_and_handles_unknown_stations(monkeypatch):
+    pytest.importorskip("torch")
+    from dpow.models import net
+
+    monkeypatch.setattr(net, "MAX_EPOCHS", 60)
+    monkeypatch.setattr(net, "PATIENCE", 60)
+    monkeypatch.setattr(net, "BATCH", 64)
+    monkeypatch.setattr(net, "HIDDEN", (32, 16))
+    df = _table()
+    df.loc[df.index[::7], "gefs_snow_mean"] = np.nan  # missing inputs are handled
+    tr, va = df[df.season != 2025], df[df.season == 2025].copy()
+    va.loc[va.station_id == "C", "station_id"] = "never-seen"
+    out = net.fit_predict(tr, va, ["ref_snow", "gefs_snow_mean", "slr__m1"], verbose=False)
+    q = np.column_stack([out[c] for c in net.OUT_Q])
+    assert np.isfinite(q).all() and (np.diff(q, axis=1) >= 0).all()
+    mae_nn = np.abs(out["nn_q50"] - va["truth_in"]).mean()
+    assert mae_nn < np.abs(va["ref_snow"] - va["truth_in"]).mean()
+    wet = (va["truth_in"] > 0.05).to_numpy()
+    assert out["nn_wet"][wet].mean() > out["nn_wet"][~wet].mean() + 0.2
