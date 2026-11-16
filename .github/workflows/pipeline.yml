@@ -35,6 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+      - name: Hourly-GFS features for the newest rounds
+        run: for lg in stations observers alps; do dpow nbhd --league "$lg" --minutes 20 || echo "::warning::nbhd $lg failed"; done
       - run: dpow table --bundle "$BUNDLE"
 
   oof:

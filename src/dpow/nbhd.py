@@ -130,15 +130,24 @@ def features(init: pd.Timestamp, st: pd.DataFrame, round_date: date) -> pd.DataF
     return out.dropna(subset=[f"{PREFIX}_ctr"])
 
 
-def for_round(league: str, round_date: date, st: pd.DataFrame | None = None) -> pd.DataFrame:
-    """The features a forecast for this round may use; empty when the run is not in the archive."""
+def for_round(league: str, round_date: date, st: pd.DataFrame | None = None, latest: bool = False) -> pd.DataFrame:
+    """The features a forecast for this round may use; empty when the run is not in the archive
+    (`latest`: fall back to the newest older run instead)."""
     from . import contract
     from .sources.dynamical import available_inits
 
     st = contract.stations(league) if st is None else st
     init = init_for_round(round_date, league, NAME)
-    if init not in available_inits(NAME):
-        return pd.DataFrame()
+    have = available_inits(NAME)
+    if init not in have:
+        if not latest:
+            return pd.DataFrame()
+        # live, before the cutoff's own run is out: the newest run there is (up to a day older;
+        # windows it does not cover completely come back empty)
+        older = have[(have <= init) & (have >= init - pd.Timedelta(hours=24))]
+        if not len(older):
+            return pd.DataFrame()
+        init = older.max()
     return features(init, st, round_date)
 
 
@@ -155,6 +164,7 @@ def join(df: pd.DataFrame) -> pd.DataFrame:
 
     dest = WORK / TAG
     store.pull(TAG, dest, f"{PREFIX}__*.parquet")
+    df = df.drop(columns=[c for c in df.columns if c.startswith(f"{PREFIX}_")])
     parts = []
     for f in sorted(dest.glob(f"{PREFIX}__*.parquet")):
         g = pd.read_parquet(f)

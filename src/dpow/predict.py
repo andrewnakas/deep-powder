@@ -248,6 +248,16 @@ def build(r: Round, network: bool = True, budget: float | None = None) -> Result
     det = sibling_det(r, info)
     det = det.assign(round_date=r.round_date) if len(det) else det
     X = assemble(ens, det, r.league)
+    try:  # hourly-GFS timing and neighbourhood (nbhd.py); the models take the gap when it fails
+        from . import nbhd
+
+        g = nbhd.for_round(r.league, r.round_date, reg.loc[ids], latest=True)
+        if len(g):
+            X = X.merge(g.drop(columns="round_date"), on=["station_id", "horizon_h"], how="left")
+        info["gfsx_rows"] = int(len(g))
+    except Exception as e:
+        info["gfsx_error"] = f"{type(e).__name__}: {str(e)[:120]}"
+        print(f"  hourly-GFS features failed: {info['gfsx_error']}", flush=True)
 
     t0 = fallback.predict_ens(X)
     t0["tier"] = "t0"

@@ -47,7 +47,11 @@ FEATURED_WEIGHT = 4.0
 # Columns that exist in the table but stay out of the model until an
 # experiment (models/experiments.py) shows they help; matched by prefix.
 EXPERIMENTAL = ("cons_tmin", "q25_slr", "q75_slr", "cons_swe_d", "cons_twet_d", "sd_slr_d", "max_slr_d",
-                "cons_slr_prev", "cons_prcp_prev", "gfsx_")
+                "cons_slr_prev", "cons_prcp_prev",
+                # hourly-GFS neighbourhood (nbhd.py): +0.29 CV on 2026-11-16, under the bar, and with the
+                # timing columns 44.11 vs 44.35 for timing alone. The timing columns are in (+1.53 CV, 24 h +3.8).
+                "gfsx_ctr", "gfsx_max", "gfsx_mean", "gfsx_min", "gfsx_sd", "gfsx_liq_max", "gfsx_frz_max",
+                "gfsx_tmin")
 
 
 @dataclass

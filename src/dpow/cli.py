@@ -148,6 +148,10 @@ def _build(bundle: str):
         return None
     df = pd.concat(tables, ignore_index=True)
     del tables
+    if bundle == "nh":
+        from . import nbhd
+
+        df = nbhd.join(df)
     # half the memory: LightGBM bins the features anyway, so float32 loses nothing
     f64 = [c for c in df.select_dtypes("float64").columns if c != "truth_in"]
     df[f64] = df[f64].astype("float32")
@@ -449,7 +453,7 @@ if __name__ == "__main__":
 
 
 @app.command()
-def nbhd(league: str = typer.Option(...), season: int = typer.Option(...),
+def nbhd(league: str = typer.Option(...), season: int = typer.Option(0, help="0: the current season"),
          minutes: int = typer.Option(300, help="Stop starting new rounds after this long"),
          bundle: str = typer.Option("nh")):
     """Harvest the hourly-GFS neighbourhood and timing features (nbhd.py) for
@@ -463,6 +467,14 @@ def nbhd(league: str = typer.Option(...), season: int = typer.Option(...),
     from . import store
 
     use_pb_data()
+    current = season == 0  # the newest season in the table, plus the days since its last round
+    if current:
+        store.pull("table", store.TABLE, f"{bundle}__{league}__*.parquet")
+        have = sorted(int(p.stem.rsplit("__", 1)[1]) for p in store.TABLE.glob(f"{bundle}__{league}__*.parquet"))
+        if not have:
+            _summary(f"nbhd {league}: no table yet")
+            return
+        season = have[-1]
     name = f"{bundle}__{league}__{season}.parquet"
     store.pull("table", store.TABLE, name)
     if not (store.TABLE / name).exists():
@@ -470,6 +482,9 @@ def nbhd(league: str = typer.Option(...), season: int = typer.Option(...),
         return
     rd = pd.read_parquet(store.TABLE / name, columns=["round_date"])["round_date"]
     dates = sorted(set(pd.to_datetime(rd).dt.date))
+    if current:
+        today = datetime.now(timezone.utc).date()
+        dates = sorted({*dates, *(d.date() for d in pd.date_range(dates[-1], today))})
     dest = store.WORK / nb.TAG
     f = dest / nb.asset(league, season)
     store.pull(nb.TAG, dest, f.name)
@@ -498,7 +513,8 @@ def nbhd(league: str = typer.Option(...), season: int = typer.Option(...),
             if failed > 20:
                 break
             continue
-        seen.add(d.isoformat())
+        if len(g) or (datetime.now(timezone.utc).date() - d).days > 3:  # an empty recent round: its run may come yet
+            seen.add(d.isoformat())
         if len(g):
             parts.append(g)
         if time.time() - last > 1500:
