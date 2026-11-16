@@ -57,10 +57,6 @@ LEARNERS: dict[str, Spec] = {
     "tweedie": Spec("tweedie", (("mean", 1.3),)),
     "q50_ens": Spec("quantile", (("q50_ens", 0.5),), ens_only=True),
     "nn": Spec("net", ()),
-    # variants of the net under test (each writes <name>_q10..q90, <name>_wet)
-    "nn_reg": Spec("net", (), net=(("dropout", 0.25), ("weight_decay", 1e-3), ("emb_drop", 0.3), ("lr", 5e-4))),
-    "nn_noemb": Spec("net", (), net=(("emb_drop", 1.0),)),
-    "nn_slow": Spec("net", (), net=(("lr", 3e-4), ("dropout", 0.2))),
 }
 
 

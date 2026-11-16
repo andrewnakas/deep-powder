@@ -30,7 +30,10 @@ MAX_EPOCHS = 20
 PATIENCE = 4
 HIDDEN = (512, 256, 128)
 # Settings a variant may override (learners.Spec.net)
-DEFAULTS = dict(emb=16, emb_drop=0.15, dropout=0.1, lr=1e-3, weight_decay=1e-5, wet_loss=0.3,
+# Out of fold on 2026-11-16 (pooled, alone): lr 1e-3 / dropout 0.1 41.86; lr 3e-4 / dropout 0.2 43.03
+# (these); heavier regularisation 42.76; no station embedding 37.62. In the stack the choice moves
+# the score by about 0.1, and averaging three nets by another 0.06: not worth three times the job.
+DEFAULTS = dict(emb=16, emb_drop=0.15, dropout=0.2, lr=3e-4, weight_decay=1e-5, wet_loss=0.3,
                 pct_start=0.1)  # short warm-up: with 0.3 the rate was still rising when validation turned
 OUT_Q = tuple(f"nn_{q}" for q in QNAMES)
 OUT_WET = "nn_wet"
