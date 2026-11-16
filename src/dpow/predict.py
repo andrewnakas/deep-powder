@@ -1,18 +1,20 @@
 """Build one round's submission.
 
-1. Ensemble features (GEFS 31 + ECMWF ENS 51 members) for *every* station
-   in the round, from the 00Z run a forecast at this league's cutoff can use.
-2. The 10-model deterministic Open-Meteo features for featured stations.
-3. Tier 1 (the trained GBM) on the union; network rows carry only the
-   ensemble features, as most training rows do. Tier 0 (the ensembles'
-   own quantiles) fills any gap, so a file always goes out.
-4. Online bias from our own resolved rounds, then stacking on the public
-   baselines merged into this round.
+1. Ensemble features (GEFS, ECMWF ENS, AIFS ENS, GFS, AIFS, HRRR) for
+   *every* station in the round, read from dynamical.org (no quota), from
+   the run a forecast at this league's cutoff can use.
+2. The multi-model Open-Meteo block for featured stations, taken from the
+   feature file open-powder-ensemble saved for the same round. deep-powder
+   makes no Open-Meteo calls of its own; when that file is missing or stale
+   the rows simply carry no multi-model block, as most training rows do.
+3. The stack: every level-1 learner fitted on all seasons, then the
+   level-2 stacker (blend, dry rule, intervals). The reference LightGBM
+   bundle is used if no stack is published, and tier 0 (the ensembles' own
+   quantiles) fills any gap, so a file always goes out.
 """
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,17 +23,17 @@ import pandas as pd
 
 from . import HORIZONS, NH_LEAGUES, OWN_BUNDLE_LEAGUES, PROXY_LEAGUE, QCOLS, ROOT
 from .contract import Round, stations
-from .dataset import KEYS, assemble, det_rows, feature_rows
+from .dataset import KEYS, assemble
 from .ens_features import features_for_init, init_for_round
-from .features import daily
-from .models import fallback, gbm, online, stack
+from .models import fallback, gbm, learners, stacker
 from .sources import dynamical
-from .sources import openmeteo as om
 from .store import MODELS
 
 HISTORY = ROOT / "history"
 COLS = ["station_id", "horizon_h", "snowfall_in", *QCOLS, "prob_6in", "swe_in"]
-FEATURED_MINUTES = 15
+SIBLING_FEATURES = ("https://raw.githubusercontent.com/andrewnakas/open-powder-ensemble/main/history/"
+                    "{league}/{round_date}.features.parquet")
+SIBLING_MAX_AGE_H = 30.0
 
 
 def bundle_names(league: str) -> list[str]:
@@ -47,6 +49,34 @@ def load_bundle(league: str) -> tuple[str | None, gbm.Bundle | None]:
         if p.exists():
             return n, gbm.Bundle.load(p)
     return None, None
+
+
+@dataclass
+class Stack:
+    name: str
+    finals: list  # learners.Final
+    stacker: stacker.Stacker
+
+
+def load_stack(league: str) -> Stack | None:
+    """The published stack for the league's bundle: needs the stacker and at
+    least its anchor learner; other learners are used when their file is there."""
+    import pickle
+
+    for n in bundle_names(league):
+        sp = MODELS / f"{n}__stacker.pkl"
+        if not sp.exists():
+            continue
+        meta = pickle.loads(sp.read_bytes())
+        finals = [pickle.loads(f.read_bytes()) for k in meta["learners"]
+                  if (f := MODELS / f"{n}__{k}.pkl").exists()]
+        if any(stacker.ANCHOR in fm.models for fm in finals):
+            return Stack(n, finals, meta["stacker"])
+    return None
+
+
+def have_model(league: str) -> bool:
+    return load_stack(league) is not None or load_bundle(league)[0] is not None
 
 
 @dataclass
@@ -85,27 +115,33 @@ def live_ensembles(r: Round, st: pd.DataFrame, info: dict) -> pd.DataFrame:
     return pd.concat(frames, axis=1).reset_index()
 
 
-def live_deterministic(r: Round, st: pd.DataFrame, info: dict) -> pd.DataFrame:
-    if st.empty:
-        return pd.DataFrame()
-    ledger = om.Ledger(deadline=time.time() + FEATURED_MINUTES * 60)
-    used0 = ledger.used
+def sibling_det(r: Round, info: dict) -> pd.DataFrame:
+    """The Open-Meteo multi-model columns open-powder-ensemble computed for
+    this round's featured stations (already limited to the models the archive
+    has), keyed station_id, horizon_h. Empty when there is no fresh file."""
+    import io
+
+    import requests
+
+    url = SIBLING_FEATURES.format(league=r.league, round_date=r.round_date)
     try:
-        h = om.fetch_by_region(st, r.target_days[0], r.target_days[-1], live=True, ledger=ledger)
-    except om.QuotaExhausted as e:
-        info["openmeteo_error"] = str(e)[:120]
+        resp = requests.get(url, timeout=60)
+        if resp.status_code == 404:
+            info["det_block"] = "none yet"
+            return pd.DataFrame()
+        resp.raise_for_status()
+        X = pd.read_parquet(io.BytesIO(resp.content))
+    except Exception as e:  # the block is a bonus, never a reason to fail the round
+        info["det_error"] = f"{type(e).__name__}: {str(e)[:120]}"
         return pd.DataFrame()
-    info["openmeteo_weight"] = round(ledger.used - used0, 1)
-    return daily(h)
-
-
-def trained_models(dly: pd.DataFrame, bundle: gbm.Bundle) -> pd.DataFrame:
-    """The live daily rows of the deterministic models the bundle has columns
-    for (all of them if it has none)."""
-    trained = {f.split("__", 1)[1] for f in bundle.features if f.startswith("slr__")}
-    if not trained or dly is None or dly.empty:
-        return dly
-    return dly[dly["model"].isin(trained)]
+    built = pd.to_datetime(X["built_utc"].iloc[0], utc=True) if "built_utc" in X and len(X) else None
+    age = (pd.Timestamp.now(tz="UTC") - built).total_seconds() / 3600 if built is not None else np.inf
+    cols = [c for c in X.columns if learners.det_column(c) and c != "ref_snow"]
+    if age > SIBLING_MAX_AGE_H or not cols:
+        info["det_block"] = f"stale ({age:.0f} h)"
+        return pd.DataFrame()
+    info["det_block"] = f"{X['station_id'].nunique()} stations, built {built:%m-%d %H:%MZ}"
+    return X[["station_id", "horizon_h", *cols]].drop_duplicates(["station_id", "horizon_h"])
 
 
 CAP_MULT, CAP_ADD = 2.5, 0.5  # physical plausibility: never far above the snowiest model
@@ -178,45 +214,52 @@ def _tier1(X: pd.DataFrame, as_league: str, bundle: gbm.Bundle) -> pd.DataFrame:
     return t1
 
 
+def _stack(X: pd.DataFrame, as_league: str, sk: Stack) -> pd.DataFrame:
+    Xb = X.copy()
+    Xb["league_code"] = NH_LEAGUES.index(as_league) if as_league in NH_LEAGUES else len(NH_LEAGUES)
+    cols: dict = {}
+    for fm in sk.finals:
+        cols.update(fm.predict(Xb))
+    F = Xb[["station_id", "horizon_h"]].assign(league=as_league, **cols)
+    p = stacker.predict(sk.stacker, F)
+    out = pd.concat([Xb[list(KEYS)].reset_index(drop=True), p.reset_index(drop=True)], axis=1)
+    out["prob_6in"] = np.clip(cols["p_ge6"], 0.001, 0.999) if "p_ge6" in cols else np.nan
+    out["tier"] = "s1"
+    has_ens = X.filter(like="_snow_q50").notna().any(axis=1).to_numpy()
+    return out[has_ens]
+
+
 def build(r: Round, network: bool = True, budget: float | None = None) -> Result:
     reg = stations(r.league)
     ids = [s for s in (r.stations if network else r.featured) if s in reg.index]
     feat_ids = [s for s in r.featured if s in reg.index]
-    bname, bundle = load_bundle(r.league)
-    info: dict = {"round": r.key, "bundle": bname}
-    proxy = r.league if bname == r.league else PROXY_LEAGUE.get(r.league, r.league)
+    sk = load_stack(r.league)
+    bname, bundle = (None, None) if sk else load_bundle(r.league)
+    info: dict = {"round": r.key, "bundle": f"{sk.name} stack" if sk else bname}
+    used = sk.name if sk else bname
+    proxy = r.league if used == r.league else PROXY_LEAGUE.get(r.league, r.league)
 
     ens = live_ensembles(r, reg.loc[ids], info)
-    dly = live_deterministic(r, reg.loc[feat_ids], info)
-    det = det_rows(dly, r.league, live_round=r.round_date)
-    if len(ens):
-        X = assemble(ens, det, r.league)
-    else:  # both ensembles down: deterministic-only tier 0 for the featured stations
-        X = feature_rows(dly, r.league, live_round=r.round_date)
-    if X.empty:
-        raise RuntimeError("no forecast inputs at all (ensembles and Open-Meteo both failed)")
+    if ens.empty:
+        raise RuntimeError("no forecast inputs (every dynamical.org archive failed)")
+    det = sibling_det(r, info)
+    det = det.assign(round_date=r.round_date) if len(det) else det
+    X = assemble(ens, det, r.league)
 
     t0 = fallback.predict_ens(X)
     t0["tier"] = "t0"
     parts = []
-    if bundle is not None and len(ens):
-        # Tier 1 sees only the deterministic models it was trained on: the
-        # live-only AIFS run otherwise shifts cons_*, nmod and ref_snow away
-        # from anything in the training table. Tier 0 and the cap keep it.
-        X1, sub = X, trained_models(dly, bundle)
-        if len(sub) != len(dly):
-            X1 = assemble(ens, det_rows(sub, r.league, live_round=r.round_date), r.league)
-        parts = [_tier1(X1, proxy, bundle)]
+    if sk is not None:
+        parts = [_stack(X, proxy, sk)]
+    elif bundle is not None:
+        parts = [_tier1(X, proxy, bundle)]
     pred = pd.concat([*parts, t0], ignore_index=True).drop_duplicates(["station_id", "horizon_h"], keep="first")
     tops = [c for c in X.columns if c.endswith(("_snow_q90", "_snow_mean", "_native_snow"))
             or c.startswith(("slr__", "snow__"))]
     pred = plausibility_cap(pred, X, tops)
     pred = _with_density(pred, X)
-    pred["raw_in"] = pred["snowfall_in"]
-    pred = online.apply(pred, r.league, r.round_date)
-    pred["model_in"] = pred["snowfall_in"]
-    pred, stack_info = stack.apply(pred, r.league, r.round_date)
-    info["stack"] = stack_info
+    # no post-processing layers yet: the model's output is what goes out
+    pred["raw_in"] = pred["model_in"] = pred["snowfall_in"]
 
     df = sanitize(pred)
     raw = pred[["station_id", "horizon_h", "raw_in", "model_in", "snowfall_in", *QCOLS, "prob_6in", "tier", "dens"]]
@@ -226,8 +269,7 @@ def build(r: Round, network: bool = True, budget: float | None = None) -> Result
         featured_coverage=round(df[df.station_id.isin(fe)].shape[0] / max(1, 3 * len(fe)), 3),
         tiers=raw["tier"].value_counts().to_dict(),
     )
-    seen = X1 if parts else X  # what the model saw
-    return Result(df=df, raw=raw, info=info, X=seen[seen["station_id"].isin(fe)].reset_index(drop=True))
+    return Result(df=df, raw=raw, info=info, X=X[X["station_id"].isin(fe)].reset_index(drop=True))
 
 
 def save_features(res: Result, path: Path, reason: str = "") -> None:

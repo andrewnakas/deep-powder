@@ -79,7 +79,7 @@ def run(
     for a in acts:
         r = a.round
         try:
-            if REQUIRE_BUNDLE and not dry_run and predict.load_bundle(r.league)[0] is None:
+            if REQUIRE_BUNDLE and not dry_run and not predict.have_model(r.league):
                 _summary(f"**{r.key}** skipped: no trained model yet (raw ensembles aren't worth submitting)")
                 continue
             res = predict.build(r, network=network, budget=budget)
@@ -91,9 +91,7 @@ def run(
             line = (f"**{r.key}** ({a.reason}) · cutoff {r.cutoff:%m-%d %H:%MZ} · {res.info['rows']} rows · "
                     f"featured coverage {v.coverage:.0%} · tiers {res.info['tiers']} · "
                     f"runs {res.info.get('gefs_init', '-')}/{res.info.get('ecens_init', '-')} · "
-                    f"Open-Meteo {res.info.get('openmeteo_weight', 'n/a')}")
-            if res.info.get("stack"):
-                line += f" · stack {res.info['stack']}"
+                    f"multi-model block {res.info.get('det_block', '-')}")
             errs = {k: v for k, v in res.info.items() if k.endswith("_error")}
             if errs:
                 line += f" · {errs}"
@@ -410,12 +408,12 @@ def _better(new: dict, old: dict) -> bool:
 def watchdog(hours: float = typer.Option(4.0, help="Alert for rounds this close to cutoff")):
     """Exit 1 (and print) if an open round near its cutoff lacks our merged file."""
     from .contract import open_rounds
-    from .predict import load_bundle
+    from .predict import have_model
     from .submit import upstream_file
 
     now = datetime.now(timezone.utc)
     missing = [r for r in open_rounds(now) if r.hours_left(now) <= hours and upstream_file(r) is None
-               and not (REQUIRE_BUNDLE and load_bundle(r.league)[0] is None)]  # not competing there yet
+               and not (REQUIRE_BUNDLE and not have_model(r.league))]  # not competing there yet
     for r in missing:
         print(f"MISSING {r.key}: cutoff {r.cutoff:%Y-%m-%d %H:%MZ} ({r.hours_left(now):.1f} h left)")
     if missing:

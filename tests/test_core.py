@@ -138,13 +138,3 @@ def test_single_days_and_spread_exist_live_and_in_the_archive():
         assert r.loc[24, "cons_slr_next"] == pytest.approx(r.loc[48, "cons_slr_d1"]) and "cons_prcp_next" in r
 
 
-def test_tier1_sees_only_the_models_it_was_trained_on():
-    from dpow.models import gbm
-    from dpow.predict import trained_models
-
-    dly = pd.DataFrame({"model": ["gfs_seamless", "ecmwf_aifs025_single", "icon_seamless"], "slr": [1.0, 9.0, 2.0]})
-    b = gbm.Bundle(features=["slr__gfs_seamless", "prcp__icon_seamless", "slr__icon_seamless", "gefs_snow_q50"],
-                   quantile_models={}, clf=None, scale={}, stn_ratio={}, rounds={})
-    assert list(trained_models(dly, b)["model"]) == ["gfs_seamless", "icon_seamless"]
-    b.features = ["gefs_snow_q50"]  # a bundle without deterministic columns leaves the rows alone
-    assert len(trained_models(dly, b)) == 3
