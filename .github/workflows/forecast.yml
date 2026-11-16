@@ -8,11 +8,11 @@
 name: Forecast & submit
 
 on:
-  # Until the entry is registered: every 6 h, forecast each open round and
-  # keep the result in history/ without submitting (shadow mode), so the stack
-  # can be scored against truth and the baselines before it competes.
+  # With the POWDERBENCH_TOKEN secret set, a scheduled run is a keeper (it
+  # submits). Without it, a scheduled run every 6 h forecasts each open round
+  # and keeps the result in history/ without submitting (shadow mode).
   schedule:
-    - cron: "23 */6 * * *"
+    - cron: "7 */2 * * *"
   workflow_dispatch:
     inputs:
       once:
@@ -56,13 +56,14 @@ jobs:
         run: |
           git config user.name "deep-powder bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - name: Shadow pass (scheduled)
-        if: ${{ github.event_name == 'schedule' }}
+      - name: Shadow pass (no token yet)
+        if: ${{ !inputs.once && env.POWDERBENCH_TOKEN == '' }}
         run: |
+          if [ $(( 10#$(date -u +%H) % 6 )) -ne 0 ] && [ "${{ github.event_name }}" = "schedule" ]; then echo "shadow passes run every 6 h"; exit 0; fi
           python -c "from dpow import store; store.pull('models', store.MODELS, '*.pkl')" || echo "no trained models"
           dpow run --force --shadow
       - name: Keeper loop
-        if: ${{ github.event_name != 'schedule' && !inputs.once }}
+        if: ${{ !inputs.once && env.POWDERBENCH_TOKEN != '' }}
         run: scripts/keeper.sh
       - name: Single pass
         if: ${{ inputs.once }}
@@ -71,7 +72,7 @@ jobs:
           dpow run ${{ inputs.league && format('-l {0}', inputs.league) || '' }} \
             ${{ inputs.force && '--force' || '' }} ${{ inputs.dry_run && '--dry-run' || '' }}
       - name: Commit history (single or shadow pass)
-        if: ${{ always() && (github.event_name == 'schedule' || (inputs.once && !inputs.dry_run)) }}
+        if: ${{ always() && !inputs.dry_run }}
         run: |
           git add history
           git diff --cached --quiet && exit 0

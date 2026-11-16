@@ -5,6 +5,8 @@
 name: Pipeline
 
 on:
+  schedule:
+    - cron: "40 5 * * *"  # daily, after the sibling entries' harvests
   workflow_dispatch:
     inputs:
       stage:
@@ -27,7 +29,7 @@ env:
 
 jobs:
   table:
-    if: contains(fromJSON('["all", "table"]'), inputs.stage)
+    if: contains(fromJSON('["all", "table"]'), inputs.stage || 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -37,13 +39,13 @@ jobs:
 
   oof:
     needs: table
-    if: always() && !cancelled() && needs.table.result != 'failure' && contains(fromJSON('["all", "oof"]'), inputs.stage)
+    if: always() && !cancelled() && needs.table.result != 'failure' && contains(fromJSON('["all", "oof"]'), inputs.stage || 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
-        learner: ${{ fromJSON(inputs.learners) }}
+        learner: ${{ fromJSON(inputs.learners || '["q50", "qlo", "qhi", "hurdle", "tweedie", "nn"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -51,7 +53,7 @@ jobs:
 
   stack:
     needs: oof
-    if: always() && !cancelled() && contains(fromJSON('["all", "oof", "stack"]'), inputs.stage)
+    if: always() && !cancelled() && contains(fromJSON('["all", "oof", "stack"]'), inputs.stage || 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

@@ -2,6 +2,8 @@
 name: Scoreboard
 
 on:
+  schedule:
+    - cron: "40 21 * * *"
   workflow_dispatch:
 
 permissions:

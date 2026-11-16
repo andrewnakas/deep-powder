@@ -5,8 +5,7 @@
 # dispatches its own successor. Cron only restarts the chain if it breaks.
 #
 # Each pass: refresh the PowderBench checkout, forecast/submit what's due,
-# commit history; once a day kick off backfill (after 00:20 UTC, when the
-# Open-Meteo quota resets) and training (after 03:00 UTC).
+# commit history; once a day make sure the model pipeline ran.
 set -uo pipefail
 LOOP_MIN="${LOOP_MINUTES:-330}"
 SLEEP_S="${SLEEP_SECONDS:-480}"
@@ -34,8 +33,9 @@ while :; do
     dpow run ${DPOW_ARGS:-} || echo "::warning::dpow run reported failures"
     commit_history
   fi
-  ran_today backfill.yml 0 || { [ "$(date -u +%H%M)" -ge 0020 ] && gh workflow run backfill.yml && echo "dispatched backfill"; }
-  ran_today train.yml 3 || { gh workflow run train.yml && echo "dispatched train"; }
+  # GitHub cron drops runs: make sure the daily model pipeline started (after
+  # the sibling entries' harvests, which end around 05 UTC)
+  ran_today pipeline.yml 6 || { gh workflow run pipeline.yml && echo "dispatched pipeline"; }
   echo "::endgroup::"
   [ $(( $(date +%s) + SLEEP_S )) -ge "$end" ] && break
   sleep "$SLEEP_S"
