@@ -87,7 +87,20 @@ def _gfsx(drop: tuple[str, ...] = ()):
     return f
 
 
+def _gfsx2(keep: tuple[str, ...]):
+    """The second set of timing columns, on top of the adopted ones."""
+    def f(df):
+        from .. import nbhd
+
+        return {"df": nbhd.join(df), "extra": tuple(f"gfsx_{k}" for k in keep)}
+    return f
+
+
 VARIANTS = {
+    "gfsx2": _gfsx2(("pre6", "pre24", "post12", "first6", "last6", "last24", "liq_pre12", "rain", "t_first12",
+                     "t_last12")),
+    "gfsx2_edges": _gfsx2(("pre6", "pre24", "post12", "first6", "last6", "last24")),
+    "gfsx2_phase": _gfsx2(("liq_pre12", "rain", "t_first12", "t_last12")),
     "gfsx": _gfsx(),
     "gfsx_nb": _gfsx(drop=("first12", "last12", "pre12", "post6", "peak6", "hours")),
     "gfsx_time": _gfsx(drop=("ctr", "max", "mean", "min", "sd", "liq_max", "frz_max", "tmin")),

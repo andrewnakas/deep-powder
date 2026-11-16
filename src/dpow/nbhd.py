@@ -21,6 +21,8 @@ Columns (inches of snow unless noted), per station, round and horizon:
   gfsx_first12, gfsx_last12                          first and last 12 local hours of the window
   gfsx_pre12, gfsx_post6                             just outside the window
   gfsx_peak6, gfsx_hours                             heaviest 6 h, hours with snow
+  gfsx_pre6, gfsx_pre24, gfsx_post12, gfsx_first6, gfsx_last6, gfsx_last24   finer and wider edges
+  gfsx_liq_pre12, gfsx_rain, gfsx_t_first12, gfsx_t_last12                   liquid before, rain inside, T at each end
 """
 
 from __future__ import annotations
@@ -120,6 +122,17 @@ def features(init: pd.Timestamp, st: pd.DataFrame, round_date: date) -> pd.DataF
             "pre12": (mean_series * ((r >= -12) & (r < 0))).sum(1),
             "post6": (mean_series * ((r >= h) & (r < h + 6))).sum(1),
             "peak6": six.max(1), "hours": ((mean_series > 0.01) & w).sum(1),
+            # second set (2026-11-16), experimental until measured
+            "pre6": (mean_series * ((r >= -6) & (r < 0))).sum(1),
+            "pre24": (mean_series * ((r >= -24) & (r < 0))).sum(1),
+            "post12": (mean_series * ((r >= h) & (r < h + 12))).sum(1),
+            "first6": (mean_series * (w & (r < 6))).sum(1),
+            "last6": (mean_series * (w & (r >= h - 6))).sum(1),
+            "last24": (mean_series * (w & (r >= h - 24))).sum(1),
+            "liq_pre12": (liq.mean(1) * ((r >= -12) & (r < 0))).sum(1),
+            "rain": ((liq - frz).mean(1) * w).sum(1),
+            "t_first12": np.nanmean(np.where(w & (r < 12), t[:, 4, :], np.nan), 1),
+            "t_last12": np.nanmean(np.where(w & (r >= h - 12), t[:, 4, :], np.nan), 1),
         }, index=st.index).astype("float32")
         f[~full] = np.nan
         f.columns = [f"{PREFIX}_{c}" for c in f.columns]
@@ -151,8 +164,11 @@ def for_round(league: str, round_date: date, st: pd.DataFrame | None = None, lat
     return features(init, st, round_date)
 
 
+FILES = f"{PREFIX}2"  # bumped when columns are added, so the harvest starts over
+
+
 def asset(league: str, season: int) -> str:
-    return f"{PREFIX}__{league}__{int(season)}.parquet"
+    return f"{FILES}__{league}__{int(season)}.parquet"
 
 
 TIMING = ("first12", "last12", "pre12", "post6", "peak6", "hours")
@@ -163,10 +179,10 @@ def join(df: pd.DataFrame) -> pd.DataFrame:
     from . import WORK, store
 
     dest = WORK / TAG
-    store.pull(TAG, dest, f"{PREFIX}__*.parquet")
+    store.pull(TAG, dest, f"{FILES}__*.parquet")
     df = df.drop(columns=[c for c in df.columns if c.startswith(f"{PREFIX}_")])
     parts = []
-    for f in sorted(dest.glob(f"{PREFIX}__*.parquet")):
+    for f in sorted(dest.glob(f"{FILES}__*.parquet")):
         g = pd.read_parquet(f)
         g["league"] = f.stem.split("__")[1]
         parts.append(g)

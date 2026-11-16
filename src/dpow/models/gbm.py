@@ -51,7 +51,8 @@ EXPERIMENTAL = ("cons_tmin", "q25_slr", "q75_slr", "cons_swe_d", "cons_twet_d", 
                 # hourly-GFS neighbourhood (nbhd.py): +0.29 CV on 2026-11-16, under the bar, and with the
                 # timing columns 44.11 vs 44.35 for timing alone. The timing columns are in (+1.53 CV, 24 h +3.8).
                 "gfsx_ctr", "gfsx_max", "gfsx_mean", "gfsx_min", "gfsx_sd", "gfsx_liq_max", "gfsx_frz_max",
-                "gfsx_tmin")
+                "gfsx_tmin", "gfsx_pre6", "gfsx_pre24", "gfsx_post12", "gfsx_first6", "gfsx_last6", "gfsx_last24",
+                "gfsx_liq_pre12", "gfsx_rain", "gfsx_t_first12", "gfsx_t_last12")
 
 
 @dataclass
