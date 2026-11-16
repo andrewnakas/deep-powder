@@ -138,3 +138,38 @@ def test_neural_net_learns_the_ratio_and_handles_unknown_stations(monkeypatch):
     assert mae_nn < np.abs(va["ref_snow"] - va["truth_in"]).mean()
     wet = (va["truth_in"] > 0.05).to_numpy()
     assert out["nn_wet"][wet].mean() > out["nn_wet"][~wet].mean() + 0.2
+
+
+def test_final_fit_predicts_like_the_folds_and_survives_pickling(monkeypatch):
+    import pickle
+
+    monkeypatch.setattr(gbm, "MAX_ROUNDS", 60)
+    df = _table()
+    params = {**gbm.PARAMS, "min_child_samples": 5}
+    for name, col in (("q50", "q50"), ("hurdle", "p_wet")):
+        info: dict = {}
+        learners.oof(df, name, params, info=info)
+        assert len(info["rounds"][col]) == 3 and info["features"]
+        fm = pickle.loads(pickle.dumps(learners.fit_final(df, name, info)))
+        p = fm.predict(df.drop(columns=["truth_in"]))[col]
+        assert len(p) == len(df) and np.isfinite(p).all()
+        if name == "q50":
+            assert np.abs(p - df["truth_in"]).mean() < np.abs(df["ref_snow"] - df["truth_in"]).mean()
+
+
+def test_neural_net_final_fit_round_trips(monkeypatch):
+    pytest.importorskip("torch")
+    import pickle
+
+    from dpow.models import net
+
+    monkeypatch.setattr(net, "MAX_EPOCHS", 20)
+    monkeypatch.setattr(net, "BATCH", 64)
+    monkeypatch.setattr(net, "HIDDEN", (32, 16))
+    df = _table()
+    info: dict = {}
+    learners.oof(df, "nn", info=info)
+    assert len(info["rounds"]["epochs"]) == 3
+    fm = pickle.loads(pickle.dumps(learners.fit_final(df, "nn", info)))
+    out = fm.predict(df.drop(columns=["truth_in"]))
+    assert set(net.OUT_Q) <= set(out) and np.isfinite(out["nn_q50"]).all()

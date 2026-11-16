@@ -12,7 +12,7 @@ on:
         default: all
       learners:
         description: "JSON list of level-1 learners"
-        default: '["q50", "qlo", "qhi", "hurdle", "tweedie", "q50_ens"]'
+        default: '["q50", "qlo", "qhi", "hurdle", "tweedie", "nn"]'
       bundle:
         description: "Bundle"
         default: nh

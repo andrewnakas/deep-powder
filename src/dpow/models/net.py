@@ -16,6 +16,8 @@ torch is an optional dependency (`pip install -e '.[nn]'`), imported lazily.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 
@@ -29,8 +31,9 @@ EMB = 16
 EMB_DROP = 0.15
 DROPOUT = 0.1
 BATCH = 4096
-LR = 2e-3
-MAX_EPOCHS = 30
+LR = 1e-3
+PCT_START = 0.1  # short warm-up: with 0.3 the rate was still rising when validation turned (2026-11-16)
+MAX_EPOCHS = 20
 PATIENCE = 4
 WET_LOSS = 0.3
 
@@ -78,7 +81,7 @@ def _net(n_in: int, n_stations: int):
     return Net()
 
 
-def _predict(model, X: np.ndarray, sid: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _forward(model, X: np.ndarray, sid: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     import torch
 
     model.eval()
@@ -92,35 +95,62 @@ def _predict(model, X: np.ndarray, sid: np.ndarray) -> tuple[np.ndarray, np.ndar
     return q, np.concatenate(ws)
 
 
-def fit_predict(tr: pd.DataFrame, va: pd.DataFrame, feats: list[str], weight=None, va_weight=None,
-                seed: int = 0, verbose: bool = True) -> dict:
-    """Fit on `tr`, stop on `va` (weighted MAE of the median), predict `va`."""
+@dataclass
+class Fitted:
+    """Everything prediction needs, picklable without torch objects."""
+    features: list[str]
+    scaler: Scaler
+    ids: dict
+    state: dict  # name -> numpy array
+    epochs: int = 0
+
+    def predict(self, X: pd.DataFrame) -> dict:
+        import torch
+
+        x = X.reindex(columns=self.features).to_numpy(np.float32)
+        Z = self.scaler(x)
+        sid = X["station_id"].map(self.ids).fillna(0).to_numpy(np.int64)
+        model = _net(Z.shape[1], len(self.ids))
+        model.load_state_dict({k: torch.from_numpy(v) for k, v in self.state.items()})
+        q, w = _forward(model, Z, sid)
+        return {**{c: q[:, k] for k, c in enumerate(OUT_Q)}, OUT_WET: w}
+
+
+def train(tr: pd.DataFrame, feats: list[str], weight=None, va: pd.DataFrame | None = None, va_weight=None,
+          epochs: int | None = None, seed: int = 0, verbose: bool = True) -> Fitted:
+    """With `va`: train up to MAX_EPOCHS, keep the epoch with the lowest
+    weighted MAE of the median on it. With `epochs` (and no `va`): train that
+    many, as the final fit on all seasons does."""
     import torch
 
     torch.manual_seed(seed)
-    torch.set_num_threads(max(1, torch.get_num_threads()))
     rng = np.random.default_rng(seed)
     scaler = Scaler(tr[feats].to_numpy(np.float32))
-    Xt, Xv = scaler(tr[feats].to_numpy(np.float32)), scaler(va[feats].to_numpy(np.float32))
+    Xt = scaler(tr[feats].to_numpy(np.float32))
     ids = {s: i + 1 for i, s in enumerate(sorted(tr["station_id"].unique()))}
     st = tr["station_id"].map(ids).to_numpy(np.int64)
-    sv = va["station_id"].map(ids).fillna(0).to_numpy(np.int64)
     yt = tr["truth_in"].to_numpy(np.float32)
-    yv = va["truth_in"].to_numpy(np.float64)
     wt = np.ones(len(tr), np.float32) if weight is None else np.asarray(weight, np.float32)
-    wv = np.ones(len(va)) if va_weight is None else np.asarray(va_weight, float)
+    if va is not None:
+        Xv = scaler(va[feats].to_numpy(np.float32))
+        sv = va["station_id"].map(ids).fillna(0).to_numpy(np.int64)
+        yv = va["truth_in"].to_numpy(np.float64)
+        wv = np.ones(len(va)) if va_weight is None else np.asarray(va_weight, float)
+    n_epochs = MAX_EPOCHS if va is not None else int(epochs or MAX_EPOCHS)
 
     model = _net(Xt.shape[1], len(ids))
     opt = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-5)
+    # the schedule is the same whatever the stopping epoch, so a final fit
+    # for n epochs retraces the first n epochs of a validated run
     steps = MAX_EPOCHS * int(np.ceil(len(tr) / BATCH))
-    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=LR, total_steps=steps)
+    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=LR, total_steps=steps, pct_start=PCT_START)
     alphas = torch.tensor(QUANTILES, dtype=torch.float32)
     tX, tS = torch.from_numpy(Xt), torch.from_numpy(st)
     tY, tW = torch.from_numpy(np.log1p(yt)), torch.from_numpy(wt)
     tWet = torch.from_numpy((yt > WET_IN).astype(np.float32))
     bce = torch.nn.BCEWithLogitsLoss(reduction="none")
-    best, best_state, bad = np.inf, None, 0
-    for epoch in range(MAX_EPOCHS):
+    best, best_state, best_epoch, bad = np.inf, None, n_epochs, 0
+    for epoch in range(n_epochs):
         model.train()
         perm = torch.from_numpy(rng.permutation(len(tr)))
         for i in range(0, len(perm), BATCH):
@@ -134,12 +164,14 @@ def fit_predict(tr: pd.DataFrame, va: pd.DataFrame, feats: list[str], weight=Non
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             opt.step()
             sched.step()
-        q, _ = _predict(model, Xv, sv)
+        if va is None:
+            continue
+        q, _ = _forward(model, Xv, sv)
         mae = float((np.abs(q[:, 2] - yv) * wv).sum() / wv.sum())
         if verbose:
             print(f"    nn epoch {epoch + 1}: validation MAE {mae:.4f}", flush=True)
         if mae < best - 1e-4:
-            best, bad = mae, 0
+            best, bad, best_epoch = mae, 0, epoch + 1
             best_state = {k: v.clone() for k, v in model.state_dict().items()}
         else:
             bad += 1
@@ -147,5 +179,14 @@ def fit_predict(tr: pd.DataFrame, va: pd.DataFrame, feats: list[str], weight=Non
                 break
     if best_state is not None:
         model.load_state_dict(best_state)
-    q, w = _predict(model, Xv, sv)
-    return {**{c: q[:, k] for k, c in enumerate(OUT_Q)}, OUT_WET: w}
+    state = {k: v.detach().numpy().copy() for k, v in model.state_dict().items()}
+    return Fitted(list(feats), scaler, ids, state, best_epoch)
+
+
+def fit_predict(tr: pd.DataFrame, va: pd.DataFrame, feats: list[str], weight=None, va_weight=None,
+                seed: int = 0, verbose: bool = True, rounds: dict | None = None) -> dict:
+    """Fit on `tr`, stop on `va` (weighted MAE of the median), predict `va`."""
+    m = train(tr, feats, weight, va, va_weight, seed=seed, verbose=verbose)
+    if rounds is not None:
+        rounds.setdefault("epochs", []).append(m.epochs)
+    return m.predict(va)

@@ -117,13 +117,57 @@ def oof(df: pd.DataFrame, name: str, params: dict | None = None, folds: list | N
         if spec.kind == "net":
             from . import net
 
-            pred = net.fit_predict(tr, va, feats, weight=gbm.row_weight(tr), va_weight=gbm.row_weight(va))
+            pred = net.fit_predict(tr, va, feats, weight=gbm.row_weight(tr), va_weight=gbm.row_weight(va),
+                                   rounds=rounds)
         else:
             pred = fit_predict(tr, va, feats, spec, params, rounds)
         del tr
         parts.append(va[KEYS].assign(fold=str(s), **pred))
         print(f"  {name} fold {s}: {len(va)} rows, {len(feats)} features", flush=True)
     return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=[*KEYS, "fold"])
+
+
+@dataclass
+class Final:
+    """A learner fitted on every season, ready to predict live rows."""
+    name: str
+    features: list[str]
+    models: dict  # column -> LightGBM booster, or {"net": net.Fitted}
+    stn_ratio: dict
+    trained_through: str = ""
+
+    def predict(self, X: pd.DataFrame) -> dict:
+        X = X.copy()
+        X["stn_ratio"] = X["station_id"].map(self.stn_ratio)
+        if "net" in self.models:
+            return self.models["net"].predict(X)
+        F = X.reindex(columns=self.features)
+        binary = LEARNERS[self.name].kind == "binary"
+        return {c: np.clip(m.predict(F), 0.0, 1.0 if binary else 200.0) for c, m in self.models.items()}
+
+
+def fit_final(df: pd.DataFrame, name: str, info: dict) -> Final:
+    """Refit on all seasons with the rounds the folds settled on (x1.1 for the
+    extra data, as the reference bundle does)."""
+    spec = LEARNERS[name]
+    df = df.drop(columns="stn_ratio", errors="ignore")
+    ratio = gbm.station_ratio(df)
+    df = gbm.add_oof_ratio(df)
+    feats = info["features"]
+    w = gbm.row_weight(df)
+    if spec.kind == "net":
+        from . import net
+
+        epochs = max(1, int(round(float(np.mean(info["rounds"]["epochs"])))))
+        models = {"net": net.train(df, feats, weight=w, epochs=epochs)}
+    else:
+        models, ds = {}, None
+        for col, value in spec.outputs:
+            if ds is None or spec.kind == "binary":
+                ds = gbm._data(df[feats], _label(spec, df["truth_in"], value), weight=w)
+            n = max(50, int(1.1 * float(np.mean(info["rounds"][col]))))
+            models[col] = gbm._train(ds, _objective(spec, value), rounds=n, params=info["params"])[0]
+    return Final(name, list(feats), models, ratio, str(max(df["round_date"])))
 
 
 def join(meta: pd.DataFrame, frames: list[pd.DataFrame]) -> pd.DataFrame:

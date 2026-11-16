@@ -200,8 +200,12 @@ def table(bundle: str = typer.Option("nh", help="nh (stations+observers+alps), e
 def oof(
     learner: str = typer.Option(..., help="A name from models/learners.py"),
     bundle: str = typer.Option("nh"),
+    final: bool = typer.Option(True, help="Also fit on all seasons and publish the model"),
 ):
-    """Out-of-fold predictions of one level-1 learner, published to the `oof` release."""
+    """Out-of-fold predictions of one level-1 learner, published to the `oof`
+    release; then the same learner fitted on all seasons, to `models`."""
+    import pickle
+
     from . import WORK, store
     from .models import gbm, learners
 
@@ -224,7 +228,17 @@ def oof(
     fj.write_text(json.dumps({**info, "rows": len(df), "trained_through": str(max(df["round_date"]))}, indent=1))
     store.push("oof", [f, fj])
     _summary(f"oof {bundle} {learner}: {len(out)} rows, columns "
-             f"{[c for c in out.columns if c not in (*learners.KEYS, 'fold')]}, peak memory {_peak_gb():.1f} GB")
+             f"{[c for c in out.columns if c not in (*learners.KEYS, 'fold')]}, rounds {info.get('rounds')}, "
+             f"peak memory {_peak_gb():.1f} GB")
+    if final:
+        del out
+        fm = learners.fit_final(df, learner, info)
+        store.MODELS.mkdir(parents=True, exist_ok=True)
+        fp = store.MODELS / f"{bundle}__{learner}.pkl"
+        fp.write_bytes(pickle.dumps(fm))
+        store.push("models", [fp])
+        _summary(f"final {bundle} {learner}: trained through {fm.trained_through}, {fp.stat().st_size / 1e6:.0f} MB, "
+                 f"peak memory {_peak_gb():.1f} GB")
 
 
 @app.command()
@@ -266,6 +280,15 @@ def stack(bundle: str = typer.Option("nh")):
             _summary(f"brier 6 in. ({c}): {b:.4f}")
     if fitted:
         _summary("\nStacker fitted on all but the last fold:\n\n" + fitted[-1].describe())
+    # the stacker that goes live is fitted on every fold
+    import pickle
+
+    live = stacker.fit(df.dropna(subset=["fold"]))
+    store.MODELS.mkdir(parents=True, exist_ok=True)
+    sp = store.MODELS / f"{bundle}__stacker.pkl"
+    sp.write_bytes(pickle.dumps({"stacker": live, "learners": order}))
+    store.push("models", [sp])
+    _summary("\nStacker fitted on all folds (the one used live):\n\n" + live.describe())
     f = d / f"{bundle}__stack.parquet"
     keep = [*learners.KEYS, "fold", "stack", *(f"stack_{q}" for q in QCOLS)]
     scored[keep].to_parquet(f, index=False, compression="zstd")
