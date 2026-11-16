@@ -214,12 +214,15 @@ def oof(
     mj = store.MODELS / f"{bundle}.json"
     if mj.exists():  # the settings the season CV picked for the reference model
         params = json.loads(mj.read_text()).get("params") or params
-    out = learners.oof(df, learner, params)
+    info: dict = {}
+    out = learners.oof(df, learner, params, info=info)
     d = WORK / "oof"
     d.mkdir(parents=True, exist_ok=True)
     f = d / f"{bundle}__{learner}.parquet"
     out.to_parquet(f, index=False, compression="zstd")
-    store.push("oof", [f])
+    fj = d / f"{bundle}__{learner}.json"
+    fj.write_text(json.dumps({**info, "rows": len(df), "trained_through": str(max(df["round_date"]))}, indent=1))
+    store.push("oof", [f, fj])
     _summary(f"oof {bundle} {learner}: {len(out)} rows, columns "
              f"{[c for c in out.columns if c not in (*learners.KEYS, 'fold')]}, peak memory {_peak_gb():.1f} GB")
 
@@ -236,6 +239,7 @@ def stack(bundle: str = typer.Option("nh")):
     d = WORK / "oof"
     store.pull("oof", d, f"{bundle}__*.parquet")
     frames = {f.stem.split("__", 1)[1]: pd.read_parquet(f) for f in sorted(d.glob(f"{bundle}__*.parquet"))}
+    frames = {k: v for k, v in frames.items() if k in learners.LEARNERS}  # not our own earlier `stack` output
     if stacker.ANCHOR not in frames:
         _summary(f"stack {bundle}: no out-of-fold `{stacker.ANCHOR}` yet")
         return

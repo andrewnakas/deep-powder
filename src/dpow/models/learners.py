@@ -76,30 +76,38 @@ def _label(spec: Spec, y: pd.Series, value: float):
     return (y > value if value == WET_IN else y >= value).astype(int) if spec.kind == "binary" else y
 
 
-def fit_predict(tr: pd.DataFrame, va: pd.DataFrame, feats: list[str], spec: Spec, params: dict) -> dict:
+def fit_predict(tr: pd.DataFrame, va: pd.DataFrame, feats: list[str], spec: Spec, params: dict,
+                rounds: dict | None = None) -> dict:
     """Fit on `tr` (early stopping on `va`, as the season CV always has) and
-    predict `va`: column -> array."""
+    predict `va`: column -> array. `rounds` collects the boosting rounds used
+    per column (the final fit on all seasons needs them)."""
     w = gbm.row_weight(tr)
     out, ds, dv = {}, None, None
     for col, value in spec.outputs:
         if ds is None or spec.kind == "binary":  # one binned dataset serves every quantile level
             ds = gbm._data(tr[feats], _label(spec, tr["truth_in"], value), weight=w)
             dv = gbm._data(va[feats], _label(spec, va["truth_in"], value), ds, weight=gbm.row_weight(va))
-        m, _ = gbm._train(ds, _objective(spec, value), dv, params=params)
+        m, n = gbm._train(ds, _objective(spec, value), dv, params=params)
+        if rounds is not None:
+            rounds.setdefault(col, []).append(int(n))
         p = m.predict(va[feats], num_iteration=m.best_iteration or None)
         out[col] = np.clip(p, 0.0, 1.0) if spec.kind == "binary" else np.clip(p, 0.0, 200.0)
     return out
 
 
-def oof(df: pd.DataFrame, name: str, params: dict | None = None, folds: list | None = None) -> pd.DataFrame:
-    """Out-of-fold predictions of one learner for every row of the fold seasons."""
+def oof(df: pd.DataFrame, name: str, params: dict | None = None, folds: list | None = None,
+        info: dict | None = None) -> pd.DataFrame:
+    """Out-of-fold predictions of one learner for every row of the fold seasons.
+    `info` receives what a final fit needs: features, settings, rounds per fold."""
     spec = LEARNERS[name]
     params = params or gbm.REFERENCE
     if "stn_ratio" not in df:
         df = gbm.add_oof_ratio(df)
     folds = folds if folds is not None else gbm.cv_folds(df)
     feats = features_for(df, spec)
-    parts = []
+    parts, rounds = [], {}
+    if info is not None:
+        info.update(learner=name, features=feats, params=params, folds=[str(f) for f in folds], rounds=rounds)
     for s in folds:
         is_va = (df["season"] == s).to_numpy()
         tr = df.loc[~is_va, [*feats, "truth_in", "featured", "station_id"]]
@@ -111,7 +119,7 @@ def oof(df: pd.DataFrame, name: str, params: dict | None = None, folds: list | N
 
             pred = net.fit_predict(tr, va, feats, weight=gbm.row_weight(tr), va_weight=gbm.row_weight(va))
         else:
-            pred = fit_predict(tr, va, feats, spec, params)
+            pred = fit_predict(tr, va, feats, spec, params, rounds)
         del tr
         parts.append(va[KEYS].assign(fold=str(s), **pred))
         print(f"  {name} fold {s}: {len(va)} rows, {len(feats)} features", flush=True)
