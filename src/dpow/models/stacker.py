@@ -30,7 +30,7 @@ from .. import QCOLS, QUANTILES, metrics
 from .blend import combine
 
 ANCHOR = "q50"
-POINT_SOURCES = ("q50", "mean", "q50_ens", "nn_q50", "ref_snow", "cons_snow")
+POINT_SOURCES = ("q50", "mean", "q50_ens", "nn_q50", "ref_snow", "cons_snow", "l2")
 WET_SOURCES = ("p_wet", "nn_wet")
 QSRC = {0.1: "q10", 0.25: "q25", 0.5: "q50", 0.75: "q75", 0.9: "q90"}
 STEP = 0.05
@@ -140,6 +140,50 @@ def _scale(g: pd.DataFrame, point: np.ndarray) -> dict[float, float]:
             d = y - np.clip(point + s * dist, 0, None)
             loss.append(np.maximum(a * d, (a - 1) * d).mean())
         out[a] = float(grid[int(np.argmin(loss))])
+    return out
+
+
+# A learned second level: a small LightGBM median over the tree learners'
+# outputs. It can mix them by situation (lean on the mean when the upper
+# quantiles are far out, on the classifiers near zero), which fixed weights
+# cannot. It joins the blend as one more source, `l2`. Out of fold on
+# 2026-11-16 it was worth +0.1 pooled, +1.0 at 24 h and -0.2 in. MAE on 6+ in. days.
+L2_INPUTS = ("q10", "q25", "q50", "q75", "q90", "mean", "p_wet", "p_ge1", "p_ge6", "horizon_h", "climo_p50",
+             "ref_snow")
+L2_LEAGUES = ("alps", "observers", "stations")
+L2_PARAMS = dict(objective="quantile", alpha=0.5, learning_rate=0.05, num_leaves=31, min_child_samples=300,
+                 feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, lambda_l2=5.0, verbose=-1)
+L2_ROUNDS = 300
+L2_FEATURED_WEIGHT = 4.0
+
+
+def l2_matrix(df: pd.DataFrame) -> pd.DataFrame:
+    F = df.reindex(columns=list(L2_INPUTS)).astype(float)
+    F["league_code"] = df["league"].map({lg: i for i, lg in enumerate(L2_LEAGUES)}).to_numpy(float)
+    return F
+
+
+def l2_fit(df: pd.DataFrame):
+    import lightgbm as lgb
+
+    d = df.dropna(subset=[ANCHOR, "truth_in"])
+    w = 1.0 + (L2_FEATURED_WEIGHT - 1.0) * d["featured"].to_numpy(float) if "featured" in d else None
+    return lgb.train(L2_PARAMS, lgb.Dataset(l2_matrix(d), d["truth_in"], weight=w), L2_ROUNDS)
+
+
+def l2_predict(model, df: pd.DataFrame) -> np.ndarray:
+    return np.clip(model.predict(l2_matrix(df)), 0.0, 200.0)
+
+
+def l2_oof(df: pd.DataFrame) -> np.ndarray:
+    """`l2` for every row, each fold predicted by a model fitted on the others."""
+    out = np.full(len(df), np.nan)
+    for s in sorted(df["fold"].dropna().unique()):
+        va = (df["fold"] == s).to_numpy()
+        tr = df[~va & df["fold"].notna().to_numpy()]
+        if tr.empty:
+            continue
+        out[va] = l2_predict(l2_fit(tr), df[va])
     return out
 
 

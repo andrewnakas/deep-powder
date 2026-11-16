@@ -173,3 +173,17 @@ def test_neural_net_final_fit_round_trips(monkeypatch):
     fm = pickle.loads(pickle.dumps(learners.fit_final(df, "nn", info)))
     out = fm.predict(df.drop(columns=["truth_in"]))
     assert set(net.OUT_Q) <= set(out) and np.isfinite(out["nn_q50"]).all()
+
+
+def test_level2_model_is_out_of_fold_and_joins_the_blend(monkeypatch):
+    monkeypatch.setattr(stacker, "L2_ROUNDS", 40)
+    monkeypatch.setattr(stacker, "L2_PARAMS", {**stacker.L2_PARAMS, "min_child_samples": 20})
+    df = _frame()
+    df["p_ge1"], df["p_ge6"], df["ref_snow"] = df["p_wet"] * 0.6, df["p_wet"] * 0.1, df["q50"]
+    df["l2"] = stacker.l2_oof(df)
+    assert df["l2"].notna().all() and (df["l2"] >= 0).all()
+    assert metrics.pooled(df, "l2") > metrics.pooled(df, "q50")  # it sees both sources and the wet chance
+    out, fitted = stacker.evaluate(df)
+    assert any("l2" in c.weights for c in fitted[-1].cells.values())
+    model = stacker.l2_fit(df)
+    assert np.isfinite(stacker.l2_predict(model, df.drop(columns=["truth_in", "l2"]))).all()

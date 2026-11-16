@@ -262,6 +262,7 @@ def stack(bundle: str = typer.Option("nh")):
     meta = _table(bundle, columns=learners.META)
     order = [stacker.ANCHOR, *[k for k in frames if k != stacker.ANCHOR]]
     df = learners.join(meta, [frames[k] for k in order])
+    df["l2"] = stacker.l2_oof(df)
     df, fitted = stacker.evaluate(df)
     points = [c for c in ("ref_snow", *stacker.POINT_SOURCES) if c in df and c != "cons_snow"]
     points = list(dict.fromkeys(points))
@@ -288,7 +289,7 @@ def stack(bundle: str = typer.Option("nh")):
     live = stacker.fit(df.dropna(subset=["fold"]))
     store.MODELS.mkdir(parents=True, exist_ok=True)
     sp = store.MODELS / f"{bundle}__stacker.pkl"
-    sp.write_bytes(pickle.dumps({"stacker": live, "learners": order}))
+    sp.write_bytes(pickle.dumps({"stacker": live, "learners": order, "l2": stacker.l2_fit(df.dropna(subset=["fold"]))}))
     store.push("models", [sp])
     _summary("\nStacker fitted on all folds (the one used live):\n\n" + live.describe())
     f = d / f"{bundle}__stack.parquet"

@@ -56,6 +56,7 @@ class Stack:
     name: str
     finals: list  # learners.Final
     stacker: stacker.Stacker
+    l2: object = None  # the level-2 LightGBM, when published
 
 
 def load_stack(league: str) -> Stack | None:
@@ -71,7 +72,7 @@ def load_stack(league: str) -> Stack | None:
         finals = [pickle.loads(f.read_bytes()) for k in meta["learners"]
                   if (f := MODELS / f"{n}__{k}.pkl").exists()]
         if any(stacker.ANCHOR in fm.models for fm in finals):
-            return Stack(n, finals, meta["stacker"])
+            return Stack(n, finals, meta["stacker"], meta.get("l2"))
     return None
 
 
@@ -220,7 +221,9 @@ def _stack(X: pd.DataFrame, as_league: str, sk: Stack) -> pd.DataFrame:
     cols: dict = {}
     for fm in sk.finals:
         cols.update(fm.predict(Xb))
-    F = Xb[["station_id", "horizon_h"]].assign(league=as_league, **cols)
+    F = Xb[["station_id", "horizon_h", "climo_p50", "ref_snow"]].assign(league=as_league, **cols)
+    if sk.l2 is not None:
+        F["l2"] = stacker.l2_predict(sk.l2, F)
     p = stacker.predict(sk.stacker, F)
     out = pd.concat([Xb[list(KEYS)].reset_index(drop=True), p.reset_index(drop=True)], axis=1)
     out["prob_6in"] = np.clip(cols["p_ge6"], 0.001, 0.999) if "p_ge6" in cols else np.nan
