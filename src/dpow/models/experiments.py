@@ -78,7 +78,19 @@ def _without(model: str):
     return f
 
 
+def _gfsx(drop: tuple[str, ...] = ()):
+    """Hourly-GFS neighbourhood and timing features (nbhd.py), joined from the `nbhd` release."""
+    def f(df):
+        from .. import nbhd
+
+        return {"df": nbhd.join(df), "extra": ("gfsx_",), "drop": tuple(f"gfsx_{d}" for d in drop)}
+    return f
+
+
 VARIANTS = {
+    "gfsx": _gfsx(),
+    "gfsx_nb": _gfsx(drop=("first12", "last12", "pre12", "post6", "peak6", "hours")),
+    "gfsx_time": _gfsx(drop=("ctr", "max", "mean", "min", "sd", "liq_max", "frz_max", "tmin")),
     "w_feat2": _w_featured(2.0),
     "w_feat4": _w_featured(4.0),
     "w_feat8": _w_featured(8.0),

@@ -144,3 +144,28 @@ def for_round(league: str, round_date: date, st: pd.DataFrame | None = None) -> 
 
 def asset(league: str, season: int) -> str:
     return f"{PREFIX}__{league}__{int(season)}.parquet"
+
+
+TIMING = ("first12", "last12", "pre12", "post6", "peak6", "hours")
+
+
+def join(df: pd.DataFrame) -> pd.DataFrame:
+    """Left-join the harvested features (the `nbhd` release) onto a training table."""
+    from . import WORK, store
+
+    dest = WORK / TAG
+    store.pull(TAG, dest, f"{PREFIX}__*.parquet")
+    parts = []
+    for f in sorted(dest.glob(f"{PREFIX}__*.parquet")):
+        g = pd.read_parquet(f)
+        g["league"] = f.stem.split("__")[1]
+        parts.append(g)
+    if not parts:
+        return df
+    g = pd.concat(parts, ignore_index=True)
+    g["round_date"] = pd.to_datetime(g["round_date"]).dt.date
+    g = g.drop_duplicates(["league", "station_id", "round_date", "horizon_h"], keep="last")
+    key = pd.to_datetime(df["round_date"]).dt.date
+    out = df.assign(round_date=key).merge(g, on=["league", "station_id", "round_date", "horizon_h"], how="left")
+    print(f"  nbhd: {out[f'{PREFIX}_ctr'].notna().mean():.0%} of rows have the hourly-GFS features", flush=True)
+    return out
