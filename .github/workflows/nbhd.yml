@@ -1,0 +1,35 @@
+# Harvest the hourly-GFS neighbourhood and timing features (src/dpow/nbhd.py)
+# for the rounds in the training table. dynamical.org archive: no quota.
+# Resumable: each job picks up where the `nbhd` release left off.
+name: Neighbourhood harvest
+
+on:
+  workflow_dispatch:
+    inputs:
+      leagues:
+        description: "JSON list of leagues"
+        default: '["stations", "observers", "alps"]'
+      seasons:
+        description: "JSON list of seasons"
+        default: "[2022, 2023, 2024, 2025, 2026]"
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    strategy:
+      fail-fast: false
+      matrix:
+        league: ${{ fromJSON(inputs.leagues) }}
+        season: ${{ fromJSON(inputs.seasons) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: dpow nbhd --league "${{ matrix.league }}" --season "${{ matrix.season }}" --minutes 300

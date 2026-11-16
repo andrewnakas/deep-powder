@@ -446,3 +446,66 @@ def scoreboard(out: Path = typer.Option(Path("docs/scoreboard.md"))):
 if __name__ == "__main__":
     sys.exit(app())
 
+
+
+@app.command()
+def nbhd(league: str = typer.Option(...), season: int = typer.Option(...),
+         minutes: int = typer.Option(300, help="Stop starting new rounds after this long"),
+         bundle: str = typer.Option("nh")):
+    """Harvest the hourly-GFS neighbourhood and timing features (nbhd.py) for
+    every round of one league and season in the training table; resumes from
+    the `nbhd` release and publishes back to it."""
+    import time
+
+    import pandas as pd
+
+    from . import nbhd as nb
+    from . import store
+
+    use_pb_data()
+    name = f"{bundle}__{league}__{season}.parquet"
+    store.pull("table", store.TABLE, name)
+    if not (store.TABLE / name).exists():
+        _summary(f"nbhd {league} {season}: no table file")
+        return
+    dates = sorted(set(pd.to_datetime(pd.read_parquet(store.TABLE / name, columns=["round_date"])["round_date"]).dt.date))
+    dest = store.WORK / nb.TAG
+    f = dest / nb.asset(league, season)
+    store.pull(nb.TAG, dest, f.name)
+    have = pd.read_parquet(f) if f.exists() else pd.DataFrame()
+    seen_f = dest / f.name.replace(".parquet", ".seen.json")
+    store.pull(nb.TAG, dest, seen_f.name)
+    seen = set(json.loads(seen_f.read_text())) if seen_f.exists() else set()
+    todo = [d for d in dates if d.isoformat() not in seen]
+    t0, parts, failed = time.time(), [have] if len(have) else [], 0
+
+    def save():
+        if parts:
+            pd.concat(parts, ignore_index=True).to_parquet(f, index=False, compression="zstd")
+        seen_f.write_text(json.dumps(sorted(seen)))
+        store.push(nb.TAG, [p for p in (f, seen_f) if p.exists()])
+
+    last = time.time()
+    for d in todo:
+        if time.time() - t0 > minutes * 60:
+            break
+        try:
+            g = nb.for_round(league, d)
+        except Exception as e:  # one bad run must not lose the rest
+            failed += 1
+            print(f"  {d}: {type(e).__name__}: {str(e)[:120]}", flush=True)
+            if failed > 20:
+                break
+            continue
+        seen.add(d.isoformat())
+        if len(g):
+            parts.append(g)
+        if time.time() - last > 1500:
+            save()
+            last = time.time()
+            print(f"  saved at {d}, {len(seen)}/{len(dates)} rounds", flush=True)
+    dest.mkdir(parents=True, exist_ok=True)
+    save()
+    rows = sum(len(p) for p in parts)
+    _summary(f"nbhd {league} {season}: {len(seen)}/{len(dates)} rounds done, {rows} rows, {failed} failed, "
+             f"{(time.time() - t0) / 60:.0f} min")
