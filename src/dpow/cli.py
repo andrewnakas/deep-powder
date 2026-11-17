@@ -455,7 +455,8 @@ if __name__ == "__main__":
 @app.command()
 def nbhd(league: str = typer.Option(...), season: int = typer.Option(0, help="0: the current season"),
          minutes: int = typer.Option(300, help="Stop starting new rounds after this long"),
-         bundle: str = typer.Option("nh"), source: str = typer.Option("gfs", help="gfs (nbhd.py) or hrrr (hrrx.py)")):
+         bundle: str = typer.Option("nh"),
+         source: str = typer.Option("gfs", help="gfs (nbhd.py), hrrr (hrrx.py) or gefs (gefx.py)")):
     """Harvest the hourly-GFS neighbourhood and timing features (nbhd.py, or hrrx.py) for
     every round of one league and season in the training table; resumes from
     the `nbhd` release and publishes back to it."""
@@ -463,10 +464,10 @@ def nbhd(league: str = typer.Option(...), season: int = typer.Option(0, help="0:
 
     import pandas as pd
 
-    from . import hrrx, store
+    from . import gefx, hrrx, store
     from . import nbhd as nb
 
-    nb = hrrx if source == "hrrr" else nb
+    nb = {"hrrr": hrrx, "gefs": gefx}.get(source, nb)
 
     use_pb_data()
     current = season == 0  # the newest season in the table, plus the days since its last round

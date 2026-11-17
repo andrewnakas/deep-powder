@@ -179,7 +179,7 @@ def join(df: pd.DataFrame) -> pd.DataFrame:
     return join_files(df, FILES, PREFIX, "hourly-GFS")
 
 
-def join_files(df: pd.DataFrame, files: str, prefix: str, label: str) -> pd.DataFrame:
+def join_files(df: pd.DataFrame, files: str, prefix: str, label: str, key: str = "ctr") -> pd.DataFrame:
     from . import WORK, store
 
     dest = WORK / TAG
@@ -197,5 +197,5 @@ def join_files(df: pd.DataFrame, files: str, prefix: str, label: str) -> pd.Data
     g = g.drop_duplicates(["league", "station_id", "round_date", "horizon_h"], keep="last")
     key = pd.to_datetime(df["round_date"]).dt.date
     out = df.assign(round_date=key).merge(g, on=["league", "station_id", "round_date", "horizon_h"], how="left")
-    print(f"  {label}: {out[f'{prefix}_ctr'].notna().mean():.0%} of rows have the features", flush=True)
+    print(f"  {label}: {out[f'{prefix}_{key}'].notna().mean():.0%} of rows have the features", flush=True)
     return out

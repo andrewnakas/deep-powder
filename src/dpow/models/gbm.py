@@ -56,7 +56,7 @@ EXPERIMENTAL = ("cons_tmin", "q25_slr", "q75_slr", "cons_swe_d", "cons_twet_d", 
                 "gfsx_pre6", "gfsx_pre24", "gfsx_post12", "gfsx_first6", "gfsx_last6", "gfsx_last24",
                 "gfsx_liq_pre12", "gfsx_rain", "gfsx_t_first12", "gfsx_t_last12",
                 # hourly HRRR 24 h features (hrrx.py): under test
-                "hrrx_")
+                "hrrx_", "gefx_")
 
 
 @dataclass

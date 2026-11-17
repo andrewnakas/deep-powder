@@ -132,7 +132,17 @@ def _ana(adj: bool = True, with_calib: bool = False):
     return f
 
 
+def _gefx(drop=()):
+    def f(df):
+        from .. import gefx
+
+        return {"df": gefx.join(df), "extra": ("gefx_",), "drop": drop}
+    return f
+
+
 VARIANTS = {
+    "gefx": _gefx(),
+    "gefx_mean": _gefx(drop=("gefx_first_sd", "gefx_last_sd", "gefx_p_")),
     "ana": _ana(),
     "ana_ratio": _ana(adj=False),
     "ana_calib": _ana(with_calib=True),
