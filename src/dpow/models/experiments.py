@@ -116,7 +116,26 @@ def _calib(keep: str = "all"):
     return f
 
 
+def _ana(adj: bool = True, with_calib: bool = False):
+    """Long-record station ratios against the HRRR / GEFS analyses (ana.py),
+    and the raw consensus scaled by each of them."""
+    def f(df):
+        from .. import ana, calib
+
+        d = ana.join(df)
+        if adj:
+            for c in [c for c in d.columns if c.startswith("ana_ratio_")]:
+                d[c.replace("ana_ratio_", "ana_adj_")] = (d["ref_snow"] * d[c]).astype("float32")
+        if with_calib:
+            d = calib.add_history(d)
+        return {"df": d}
+    return f
+
+
 VARIANTS = {
+    "ana": _ana(),
+    "ana_ratio": _ana(adj=False),
+    "ana_calib": _ana(with_calib=True),
     "calib": _calib(),
     "calib_adj": _calib("adj"),
     "calib_ratio": _calib("ratio"),
