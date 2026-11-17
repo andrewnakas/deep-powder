@@ -195,7 +195,7 @@ def join_files(df: pd.DataFrame, files: str, prefix: str, label: str, key: str =
     g = pd.concat(parts, ignore_index=True)
     g["round_date"] = pd.to_datetime(g["round_date"]).dt.date
     g = g.drop_duplicates(["league", "station_id", "round_date", "horizon_h"], keep="last")
-    key = pd.to_datetime(df["round_date"]).dt.date
-    out = df.assign(round_date=key).merge(g, on=["league", "station_id", "round_date", "horizon_h"], how="left")
+    rd = pd.to_datetime(df["round_date"]).dt.date
+    out = df.assign(round_date=rd).merge(g, on=["league", "station_id", "round_date", "horizon_h"], how="left")
     print(f"  {label}: {out[f'{prefix}_{key}'].notna().mean():.0%} of rows have the features", flush=True)
     return out
