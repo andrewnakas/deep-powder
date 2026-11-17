@@ -528,3 +528,42 @@ def nbhd(league: str = typer.Option(...), season: int = typer.Option(0, help="0:
     rows = sum(len(p) for p in parts)
     _summary(f"{source} {league} {season}: {len(seen)}/{len(dates)} rounds done, {rows} rows, {failed} failed, "
              f"{(time.time() - t0) / 60:.0f} min")
+
+
+@app.command()
+def ana(league: str = typer.Option(...), source: str = typer.Option(..., help="hrrr or gefs"),
+        minutes: int = typer.Option(300, help="Stop starting new winters after this long")):
+    """Harvest daily analysis snow at every station of a league (ana.py), one
+    winter at a time since the archive starts; resumes from the `nbhd` release."""
+    import pandas as pd
+
+    from . import ana as an
+    from . import store
+    from .contract import stations
+
+    use_pb_data()
+    if league not in an.LEAGUES[source]:
+        _summary(f"ana {league} {source}: not covered")
+        return
+    dest = store.WORK / an.TAG
+    f = dest / an.asset(league, source)
+    seen_f = f.with_suffix(".done.json")
+    store.pull(an.TAG, dest, f.name)
+    store.pull(an.TAG, dest, seen_f.name)
+    have = pd.read_parquet(f) if f.exists() else pd.DataFrame()
+    done = set(json.loads(seen_f.read_text())) if seen_f.exists() else set()
+    # the current winter is never final: harvest it again each time
+    cur = str(datetime.now(timezone.utc).year - (datetime.now(timezone.utc).month < 8))
+    done.discard(cur)
+    if len(have):
+        have = have[pd.to_datetime(have["date"]) < pd.Timestamp(f"{cur}-08-01")]
+    new, done = an.harvest(league, source, stations(league), start=an.TRUTH_FROM.get(league), minutes=minutes,
+                           done=done)
+    out = pd.concat([have, new], ignore_index=True) if len(new) else have
+    out = out.drop_duplicates(["station_id", "date"], keep="last") if len(out) else out
+    dest.mkdir(parents=True, exist_ok=True)
+    out.to_parquet(f, index=False, compression="zstd")
+    seen_f.write_text(json.dumps(sorted(done)))
+    store.push(an.TAG, [f, seen_f])
+    n_st = out["station_id"].nunique() if len(out) else 0
+    _summary(f"ana {league} {source}: winters {sorted(done)}, {len(out)} station-days, {n_st} stations")

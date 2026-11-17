@@ -1,0 +1,33 @@
+# Long-record station calibration (src/dpow/ana.py): daily analysis snow at
+# every station since the analysis archive starts (HRRR 2014-10, GEFS 2000).
+# dynamical.org, no quota. Resumable: reruns continue where the release stops.
+name: Analysis harvest
+
+on:
+  workflow_dispatch:
+    inputs:
+      pairs:
+        description: "JSON list of league:source"
+        default: '["stations:hrrr", "observers:hrrr", "stations:gefs", "observers:gefs", "alps:gefs"]'
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    strategy:
+      fail-fast: false
+      matrix:
+        pair: ${{ fromJSON(inputs.pairs) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: |
+          p="${{ matrix.pair }}"
+          dpow ana --league "${p%%:*}" --source "${p##*:}" --minutes 300
