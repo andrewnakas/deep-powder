@@ -55,8 +55,10 @@ EXPERIMENTAL = ("cons_tmin", "q25_slr", "q75_slr", "cons_swe_d", "cons_twet_d", 
                 # second timing set: +0.41 CV on 2026-11-16 but the 2023 fold down, so not adopted
                 "gfsx_pre6", "gfsx_pre24", "gfsx_post12", "gfsx_first6", "gfsx_last6", "gfsx_last24",
                 "gfsx_liq_pre12", "gfsx_rain", "gfsx_t_first12", "gfsx_t_last12",
-                # hourly HRRR 24 h features (hrrx.py): under test
-                "hrrx_", "gefx_")
+                # hourly HRRR 24 h (hrrx.py) +0.00 and GEFS timing (gefx.py) +0.10 on 2026-11-17: no gain
+                "hrrx_", "gefx_",
+                # storm wind against the terrain (wndx.py): under test
+                "wndx_")
 
 
 @dataclass

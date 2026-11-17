@@ -132,17 +132,18 @@ def _ana(adj: bool = True, with_calib: bool = False):
     return f
 
 
-def _gefx(drop=()):
+def _wndx(drop=()):
     def f(df):
-        from .. import gefx
+        from .. import wndx
 
-        return {"df": gefx.join(df), "extra": ("gefx_",), "drop": drop}
+        return {"df": wndx.join(df), "extra": ("wndx_",), "drop": drop}
     return f
 
 
 VARIANTS = {
-    "gefx": _gefx(),
-    "gefx_mean": _gefx(drop=("gefx_first_sd", "gefx_last_sd", "gefx_p_")),
+    # gefx (GEFS 31-member timing): -0.08, mean-only +0.10 on 2026-11-17; removed
+    "wndx": _wndx(),
+    "wndx_flow": _wndx(drop=("wndx_pw", "wndx_rh", "wndx_t80")),
     "ana": _ana(),
     "ana_ratio": _ana(adj=False),
     "ana_calib": _ana(with_calib=True),
