@@ -141,6 +141,7 @@ def _wndx(drop=()):
 
 
 VARIANTS = {
+    "hsp": lambda df: {"df": __import__("dpow.hsp", fromlist=["join"]).join(df), "extra": ("hsp_",)},
     # gefx (GEFS 31-member timing): -0.08, mean-only +0.10 on 2026-11-17; removed
     # wndx (storm wind + moisture): +0.52 every fold up, ADOPTED 2026-11-17; flow-only +0.10
     "ana": _ana(),
