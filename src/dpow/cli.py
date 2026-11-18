@@ -149,9 +149,9 @@ def _build(bundle: str):
     df = pd.concat(tables, ignore_index=True)
     del tables
     if bundle == "nh":
-        from . import nbhd
+        from . import nbhd, wndx
 
-        df = nbhd.join(df)
+        df = wndx.join(nbhd.join(df))
     # half the memory: LightGBM bins the features anyway, so float32 loses nothing
     f64 = [c for c in df.select_dtypes("float64").columns if c != "truth_in"]
     df[f64] = df[f64].astype("float32")

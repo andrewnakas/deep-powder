@@ -258,6 +258,16 @@ def build(r: Round, network: bool = True, budget: float | None = None) -> Result
     except Exception as e:
         info["gfsx_error"] = f"{type(e).__name__}: {str(e)[:120]}"
         print(f"  hourly-GFS features failed: {info['gfsx_error']}", flush=True)
+    try:  # storm wind and moisture during the snow (wndx.py), same run rule
+        from . import wndx
+
+        w = wndx.for_round(r.league, r.round_date, reg.loc[ids], latest=True)
+        if len(w):
+            X = X.merge(w.drop(columns="round_date"), on=["station_id", "horizon_h"], how="left")
+        info["wndx_rows"] = int(len(w))
+    except Exception as e:
+        info["wndx_error"] = f"{type(e).__name__}: {str(e)[:120]}"
+        print(f"  storm-wind features failed: {info['wndx_error']}", flush=True)
 
     t0 = fallback.predict_ens(X)
     t0["tier"] = "t0"

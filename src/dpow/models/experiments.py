@@ -142,8 +142,7 @@ def _wndx(drop=()):
 
 VARIANTS = {
     # gefx (GEFS 31-member timing): -0.08, mean-only +0.10 on 2026-11-17; removed
-    "wndx": _wndx(),
-    "wndx_flow": _wndx(drop=("wndx_pw", "wndx_rh", "wndx_t80")),
+    # wndx (storm wind + moisture): +0.52 every fold up, ADOPTED 2026-11-17; flow-only +0.10
     "ana": _ana(),
     "ana_ratio": _ana(adj=False),
     "ana_calib": _ana(with_calib=True),
