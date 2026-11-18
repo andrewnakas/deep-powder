@@ -52,8 +52,9 @@ EXPERIMENTAL = ("cons_tmin", "q25_slr", "q75_slr", "cons_swe_d", "cons_twet_d", 
                 # timing columns 44.11 vs 44.35 for timing alone. The timing columns are in (+1.53 CV, 24 h +3.8).
                 "gfsx_ctr", "gfsx_max", "gfsx_mean", "gfsx_min", "gfsx_sd", "gfsx_liq_max", "gfsx_frz_max",
                 "gfsx_tmin",
-                # second timing set: +0.41 CV on 2026-11-16 but the 2023 fold down, so not adopted
-                "gfsx_pre6", "gfsx_pre24", "gfsx_post12", "gfsx_first6", "gfsx_last6", "gfsx_last24",
+                # second timing set: +0.41 CV on 2026-11-16 (2023 fold down). Split on 2026-11-18 with wndx in:
+                # the edges (pre6, pre24, post12, first6, last6, last24) +0.72 every fold up -> ADOPTED;
+                # the phase columns +0.42 but 2025 flat -> still out
                 "gfsx_liq_pre12", "gfsx_rain", "gfsx_t_first12", "gfsx_t_last12",
                 # hourly HRRR 24 h (hrrx.py) +0.00 and GEFS timing (gefx.py) +0.10 on 2026-11-17: no gain
                 "hrrx_", "gefx_")
