@@ -25,7 +25,7 @@ from . import HORIZONS, NH_LEAGUES, OWN_BUNDLE_LEAGUES, PROXY_LEAGUE, QCOLS, ROO
 from .contract import Round, stations
 from .dataset import KEYS, assemble
 from .ens_features import features_for_init, init_for_round
-from .models import fallback, gbm, learners, stacker
+from .models import fallback, gbm, learners, stack, stacker
 from .sources import dynamical
 from .store import MODELS
 
@@ -281,8 +281,12 @@ def build(r: Round, network: bool = True, budget: float | None = None) -> Result
             or c.startswith(("slr__", "snow__"))]
     pred = plausibility_cap(pred, X, tops)
     pred = _with_density(pred, X)
-    # no post-processing layers yet: the model's output is what goes out
     pred["raw_in"] = pred["model_in"] = pred["snowfall_in"]
+    # blend with the public baseline that has complemented our model best on
+    # our own resolved rounds (models/stack.py: off below MIN_ROUNDS rounds
+    # or MIN_GAIN). Live replay 2026-11-19 (17 stations rounds, opm/ope raw):
+    # an equal blend with baseline-consensus beat both raws by ~1.5 pooled.
+    pred, info["stack"] = stack.apply(pred, r.league, r.round_date)
 
     df = sanitize(pred)
     raw = pred[["station_id", "horizon_h", "raw_in", "model_in", "snowfall_in", *QCOLS, "prob_6in", "tier", "dens"]]
