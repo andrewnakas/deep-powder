@@ -1,0 +1,13 @@
+{
+ "bundle": "nh stack",
+ "cycle": "2026-11-18T12Z",
+ "final": false,
+ "merged": true,
+ "pr": "https://github.com/andrewnakas/powderbench/pull/789",
+ "submissions": 1,
+ "submitted_utc": "2026-11-19T02:36:39+00:00",
+ "tiers": {
+  "s1": 714
+ },
+ "updates": 0
+}
