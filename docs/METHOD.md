@@ -37,6 +37,16 @@ The reported score of the stack is nested: the stacker that predicts a season ne
 The training table is built from the siblings' public stores once a day and published
 (`table` release). deep-powder makes no Open-Meteo calls.
 
+## Inputs tried and not adopted
+An input is adopted when it raises the pooled score by 0.3 or more and every held-out season
+gains (`experiment.yml`).
+- **NOAA National Blend of Models snowfall** (`nbmx`, 2026-11-19): 6 h ASNOW from the NBM
+  archive on AWS (`noaa-nbm-grib2-pds`, from 2020-10), the 18Z D−1 run, at the station's grid
+  cell and its 3 × 3 neighbourhood, per 24/48/72 h window. US stations only (76% of rows).
+  +0.24 pooled with every season up (46.9 → 47.0, 43.6 → 43.8, 47.4 → 47.8); the gain is at
+  24 h (36.9 → 37.7) and on 6+ in. days (MAE 4.56 → 4.47). The amounts-only variant: +0.23,
+  2024 down. Harvest stays published (`nbhd` release, prefix `nbmx_`).
+
 ---
 
 # Inherited from open-powder-ensemble
