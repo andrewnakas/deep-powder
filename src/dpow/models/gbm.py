@@ -59,7 +59,9 @@ EXPERIMENTAL = ("cons_tmin", "q25_slr", "q75_slr", "cons_swe_d", "cons_twet_d", 
                 # hourly HRRR 24 h (hrrx.py) +0.00 and GEFS timing (gefx.py) +0.10 on 2026-11-17: no gain
                 "hrrx_", "gefx_",
                 # hourly snowpack up to the cutoff (hsp.py): under test
-                "hsp_")
+                "hsp_",
+                # NOAA National Blend snowfall (nbmx.py, AWS archive): under test
+                "nbmx_")
 # wndx_ (storm wind, moisture and 80 m temperature during the snow, wndx.py) ADOPTED 2026-11-17:
 # q50 CV 44.53 -> 45.05, every fold up (flow-only columns +0.10: the moisture/temperature carry it)
 

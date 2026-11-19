@@ -132,6 +132,15 @@ def _ana(adj: bool = True, with_calib: bool = False):
     return f
 
 
+def _nbmx(drop: tuple[str, ...] = ()):
+    """NOAA National Blend snowfall at the station (nbmx.py) on top of the adopted set."""
+    def f(df):
+        from .. import nbmx
+
+        return {"df": nbmx.join(df), "extra": ("nbmx_",), "drop": tuple(f"nbmx_{d}" for d in drop)}
+    return f
+
+
 def _wndx(drop=()):
     def f(df):
         from .. import wndx
@@ -150,6 +159,8 @@ VARIANTS = {
     "calib": _calib(),
     "calib_adj": _calib("adj"),
     "calib_ratio": _calib("ratio"),
+    "nbmx": _nbmx(),
+    "nbmx_amount": _nbmx(drop=("last12", "pre12", "post6")),
     "hrrx": _hrrx(),
     "hrrx_amount": _hrrx(drop=("first12", "last12", "pre12", "post6", "peak3", "hours")),
     "gfsx2": _gfsx2(("pre6", "pre24", "post12", "first6", "last6", "last24", "liq_pre12", "rain", "t_first12",
