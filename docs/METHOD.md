@@ -46,6 +46,11 @@ gains (`experiment.yml`).
   +0.24 pooled with every season up (46.9 → 47.0, 43.6 → 43.8, 47.4 → 47.8); the gain is at
   24 h (36.9 → 37.7) and on 6+ in. days (MAE 4.56 → 4.47). The amounts-only variant: +0.23,
   2024 down. Harvest stays published (`nbhd` release, prefix `nbmx_`).
+- **Hourly SNOTEL snowpack to the cutoff** (`hsp`, 2026-11-20): depth and SWE change from NRCS
+  AWDB hourly data up to 3 h before the cutoff (the daily snowpack features stop at D−2 and miss
+  overnight storms). SNOTEL stations only (34% of rows). +0.06 pooled, with 2023 and 2024 down
+  (46.9 → 46.8, 43.6 → 43.3, 47.4 → 47.9); the stations league is unchanged (47.7). Harvest stays
+  published (`nbhd` release, prefix `hsp_`).
 
 ---
 
