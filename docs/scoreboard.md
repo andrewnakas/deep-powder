@@ -1,4 +1,4 @@
-_Updated 2026-11-20 02:36 UTC from PowderBench leaderboards._
+_Updated 2026-11-21 02:49 UTC from PowderBench leaderboards._
 
 ### alps — not entered yet
 
@@ -26,12 +26,12 @@ _Updated 2026-11-20 02:36 UTC from PowderBench leaderboards._
 
 | # | team | Powder Accuracy | MAE | pinball | Brier₆ | rounds |
 |---|---|---|---|---|---|---|
-| 1 | open-powder-ensemble | 29.1 | 0.15 | 0.062 | 0.003 | 18 |
-| 2 | baseline-consensus | 23.2 | 0.15 | – | – | 23 |
-| 3 | baseline-icon | 17.5 | 0.18 | – | – | 23 |
-| 4 | baseline-ukmo | 16.3 | 0.15 | – | – | 23 |
-| 5 | baseline-zeros | 15.8 | 0.19 | 0.095 | 0.003 | 23 |
-| 6 | house-blend | 8.7 | 0.18 | 0.083 | 0.003 | 20 |
+| 1 | open-powder-ensemble | 31.6 | 0.15 | 0.062 | 0.003 | 19 |
+| 2 | baseline-consensus | 25.8 | 0.15 | – | – | 24 |
+| 3 | baseline-icon | 20.4 | 0.18 | – | – | 24 |
+| 4 | baseline-ukmo | 19.3 | 0.14 | – | – | 24 |
+| 5 | baseline-zeros | 18.7 | 0.19 | 0.093 | 0.002 | 24 |
+| 6 | house-blend | 11.4 | 0.18 | 0.085 | 0.003 | 21 |
 
 ### resorts — not entered yet
 
@@ -49,19 +49,20 @@ _Updated 2026-11-20 02:36 UTC from PowderBench leaderboards._
 | # | team | Powder Accuracy | MAE | pinball | Brier₆ | rounds |
 |---|---|---|---|---|---|---|
 | 1 | baseline-ecmwf | 29.4 | 0.97 | – | – | 8 |
-| 2 | baseline-icon | 20.9 | 1.20 | – | – | 12 |
-| 3 | baseline-zeros | 18.4 | 1.36 | 0.682 | 0.043 | 13 |
-| 4 | baseline-aifs | 18.2 | 1.19 | – | – | 12 |
-| 5 | baseline-wpc | 15.8 | 1.20 | 0.544 | 0.034 | 12 |
-| 6 | baseline-consensus | 12.8 | 1.22 | – | – | 12 |
+| 2 | baseline-icon | 21.0 | 1.36 | – | – | 13 |
+| 3 | baseline-aifs | 17.8 | 1.37 | – | – | 13 |
+| 4 | baseline-zeros | 17.4 | 1.55 | 0.774 | 0.051 | 14 |
+| 5 | baseline-wpc | 16.8 | 1.35 | 0.610 | 0.040 | 13 |
+| 6 | baseline-consensus | 13.7 | 1.37 | – | – | 13 |
 
-### stations — not entered yet
+### stations — **#None** of 19 (Powder Accuracy 64.8, 1 rounds, not yet ranked)
 
 | # | team | Powder Accuracy | MAE | pinball | Brier₆ | rounds |
 |---|---|---|---|---|---|---|
-| 1 | house-gbm | 48.4 | 0.83 | 0.328 | 0.017 | 11 |
-| 2 | house-analog | 45.6 | 0.96 | 0.356 | 0.020 | 11 |
-| 3 | baseline-consensus | 38.8 | 0.80 | – | – | 26 |
-| 4 | house-blend | 36.9 | 0.79 | 0.358 | 0.023 | 24 |
-| 5 | baseline-wpc | 36.0 | 0.73 | 0.293 | 0.013 | 21 |
+| 1 | house-gbm | 49.2 | 0.95 | 0.377 | 0.022 | 12 |
+| 2 | house-analog | 45.6 | 1.12 | 0.415 | 0.025 | 12 |
+| 3 | baseline-consensus | 39.2 | 0.87 | – | – | 27 |
+| 4 | house-blend | 38.0 | 0.83 | 0.378 | 0.025 | 25 |
+| 5 | baseline-wpc | 37.3 | 0.78 | 0.310 | 0.015 | 22 |
 | 6 | baseline-ecmwf | 33.4 | 0.91 | – | – | 15 |
+| None | **deep-powder** | 64.8 | 1.88 | 0.636 | 0.058 | 1 |
