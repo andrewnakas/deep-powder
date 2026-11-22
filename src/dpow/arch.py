@@ -102,6 +102,8 @@ def harvest_unit(ds: str, league: str, month: pd.Period, deadline: float) -> pd.
 
 
 def releases() -> list[str]:
+    if not store._repo():  # off Actions without DPOW_REPO: units only on disk
+        return []
     r = store._gh("release", "list", "-R", store._repo() or "", "-L", "200", "--json", "tagName", "-q", ".[].tagName")
     return sorted(t for t in r.stdout.split() if t.startswith(PREFIX + "-")) if r.returncode == 0 else []
 
@@ -115,7 +117,7 @@ def run(leagues: list[str], datasets: list[str] | None, minutes: float, end: dat
     """Harvest the next missing units; `part`/`parts` split the list between parallel jobs."""
     end = end or (pd.Timestamp.utcnow() - pd.Timedelta(days=5)).date()
     deadline = time.time() + minutes * 60
-    have = remote()
+    have = remote() | {p.name for p in ARCH.glob("ens__*.parquet")}  # off Actions, units stay on disk
     # split the full list (not just the missing units), so jobs that start at different times agree
     todo = [u for i, u in enumerate(units(leagues, end, datasets)) if i % parts == part and unit_name(*u) not in have]
     print(f"arch: {len(todo)} units to go ({', '.join(leagues)}; {', '.join(datasets or ['all datasets'])}), "
