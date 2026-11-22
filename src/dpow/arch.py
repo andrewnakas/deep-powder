@@ -110,11 +110,14 @@ def remote() -> set[str]:
     return {a for t in releases() for a in store.remote_assets(t)}
 
 
-def run(leagues: list[str], datasets: list[str] | None, minutes: float, end: date | None = None) -> dict:
+def run(leagues: list[str], datasets: list[str] | None, minutes: float, end: date | None = None,
+        part: int = 0, parts: int = 1) -> dict:
+    """Harvest the next missing units; `part`/`parts` split the list between parallel jobs."""
     end = end or (pd.Timestamp.utcnow() - pd.Timedelta(days=5)).date()
     deadline = time.time() + minutes * 60
     have = remote()
-    todo = [u for u in units(leagues, end, datasets) if unit_name(*u) not in have]
+    # split the full list (not just the missing units), so jobs that start at different times agree
+    todo = [u for i, u in enumerate(units(leagues, end, datasets)) if i % parts == part and unit_name(*u) not in have]
     print(f"arch: {len(todo)} units to go ({', '.join(leagues)}; {', '.join(datasets or ['all datasets'])}), "
           f"{minutes:.0f} min budget", flush=True)
     ARCH.mkdir(parents=True, exist_ok=True)

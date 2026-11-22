@@ -1,8 +1,9 @@
 # Harvest the every-station archive (src/dpow/arch.py): dynamical.org round
 # features for every station of each league (not only the featured ones and
 # the sibling's network sample) and ECMWF ENS back to 2020-10. No Open-Meteo.
-# One job per league x dataset, time-boxed and resumable (finished units are
-# assets of the `arch-<year>` releases): rerun until every job reports 0 to go.
+# One job per league x dataset x part, time-boxed and resumable (finished
+# units are assets of the `arch-<year>` releases): rerun until every job
+# reports 0 to go.
 name: Every-station archive
 
 on:
@@ -10,10 +11,13 @@ on:
     inputs:
       leagues:
         description: "JSON list of leagues"
-        default: '["stations", "observers", "alps"]'
+        default: '["stations", "observers", "alps", "era5"]'
       datasets:
         description: "JSON list of datasets"
         default: '["ecens", "gefs", "gfs", "hrrr", "aifs", "aifsens"]'
+      parts:
+        description: "Jobs per league x dataset (each takes every n-th missing unit)"
+        default: "1"
       minutes:
         description: "Time budget per job"
         default: "300"
@@ -33,16 +37,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      parts: ${{ steps.p.outputs.parts }}
+    steps:
+      - id: p
+        run: echo "parts=$(python3 -c 'import json,sys; print(json.dumps(list(range(int(sys.argv[1])))))' '${{ inputs.parts }}')" >> "$GITHUB_OUTPUT"
+
   harvest:
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJSON(inputs.parallel) }}
       matrix:
-        league: ${{ fromJSON(inputs.leagues) }}
         dataset: ${{ fromJSON(inputs.datasets) }}
+        league: ${{ fromJSON(inputs.leagues) }}
+        part: ${{ fromJSON(needs.plan.outputs.parts) }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: dpow arch -l "${{ matrix.league }}" -d "${{ matrix.dataset }}" --minutes "${{ inputs.minutes }}"
+      - run: >-
+          dpow arch -l "${{ matrix.league }}" -d "${{ matrix.dataset }}" --minutes "${{ inputs.minutes }}"
+          --part "${{ matrix.part }}" --parts "${{ inputs.parts }}"

@@ -534,12 +534,14 @@ def nbhd(league: str = typer.Option(...), season: int = typer.Option(0, help="0:
 @app.command()
 def arch(league: list[str] = typer.Option(["stations", "observers", "alps", "era5"], "--league", "-l"),
          dataset: list[str] | None = typer.Option(None, "--dataset", "-d", help="Only these dynamical datasets"),
-         minutes: float = typer.Option(300, help="Stop starting new units after this long")):
+         minutes: float = typer.Option(300, help="Stop starting new units after this long"),
+         part: int = typer.Option(0, help="This job's share of the missing units (0-based)"),
+         parts: int = typer.Option(1, help="Jobs sharing the missing units")):
     """Harvest the every-station archive (arch.py): dynamical.org round features
     for all stations of each league, ECMWF ENS back to 2020-10. Resumable."""
     from . import arch as ar
 
-    res = ar.run(list(league), list(dataset) if dataset else None, minutes)
+    res = ar.run(list(league), list(dataset) if dataset else None, minutes, part=part, parts=parts)
     _summary(f"arch {','.join(league)} {','.join(dataset or ['all'])}: {res}")
 
 
