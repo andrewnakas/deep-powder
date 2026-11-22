@@ -3,7 +3,7 @@
 | key     | model                     | members | runs used        | archive from | grid            |
 |---------|---------------------------|---------|------------------|--------------|-----------------|
 | gefs    | NOAA GEFS                 | 31      | 00Z              | 2020-10      | 0.25 deg        |
-| ecens   | ECMWF IFS ENS             | 51      | 00Z              | 2024-04      | 0.25 deg        |
+| ecens   | ECMWF IFS ENS             | 51      | 00Z              | 2020-10      | 0.25 deg        |
 | gfs     | NOAA GFS                  | 1       | 00Z              | 2021-05      | 0.25 deg        |
 | hrrr    | NOAA HRRR (CONUS, 3 km)   | 1       | 6-hourly, 48 h   | 2018-07      | Lambert y/x     |
 | aifs    | ECMWF AIFS (AI)           | 1       | 00Z              | 2024-04      | 0.25 deg        |
@@ -57,7 +57,10 @@ DATASETS = {
     "ecens": Dataset(
         "ecens", {"precipitation_surface": "p", "temperature_2m": "t2m",
                   "dew_point_temperature_2m": "td", "temperature_850hpa": "t850"},
-        "2024-04-01", "upper", url=f"{BASE}/ecmwf/ifs-ens/forecast-15-day-0-25-degree/latest.zarr"),
+        # the Icechunk store holds the same runs as the old latest.zarr (2024-04 on, checked
+        # value for value) plus the archive back to 2020-10
+        "2020-10-15", "upper",
+        icechunk=("dynamical-ecmwf-ifs-ens", "ecmwf-ifs-ens-forecast-15-day-0-25-degree/v0.1.0.icechunk")),
     "gfs": Dataset(
         "gfs", {"precipitation_surface": "p", "temperature_2m": "t2m",
                 "percent_frozen_precipitation_surface": "pfz"},

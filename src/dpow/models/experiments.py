@@ -149,7 +149,97 @@ def _wndx(drop=()):
     return f
 
 
+
+# Every column built from the Open-Meteo deterministic archive (featured
+# stations only): the per-model columns, their summaries and the day splits.
+OM_PREFIXES = ("slr__", "snow__", "prcp__", "twet__", "swe__", "cons_", "mean_slr", "max_slr", "min_slr", "sd_slr",
+               "nsnow", "max_snow", "sd_snow", "nmod", "frac_snowy", "q25_slr", "q75_slr", "stitched")
+ARCH_KEYS = ["station_id", "round_date", "horizon_h"]
+
+
+def _no_om(df):
+    """No Open-Meteo at all: what the model keeps from dynamical.org, NBM-free
+    snowpack and static columns alone."""
+    from ..dataset import add_ref
+
+    d = df.copy()
+    om = [c for c in d.columns if c.startswith(OM_PREFIXES)]
+    d[om] = np.nan
+    add_ref(d)
+    return {"df": gbm.add_oof_ratio(d)}
+
+
+def _ecens_old(df):
+    """ECMWF ENS for 2020-10..2024-03 too (arch.py, the long Icechunk store):
+    fills the ecens columns of rows that so far had GEFS/GFS/HRRR only."""
+    from .. import arch
+    from ..dataset import add_ref
+
+    leagues = sorted(df["league"].unique())
+    arch.pull(leagues, ["ecens"])
+    d = df.copy()
+    cols = [c for c in d.columns if c.startswith("ecens_")]
+    for lg in leagues:
+        e = arch.load(lg, ["ecens"])
+        if e.empty:
+            continue
+        m = (d["league"] == lg).to_numpy()
+        got = d.loc[m, ARCH_KEYS].merge(e[ARCH_KEYS + [c for c in cols if c in e]], on=ARCH_KEYS, how="left")
+        before = d.loc[m, "ecens_snow_q50"].notna().mean()
+        for c in cols:
+            if c in got:
+                d.loc[m, c] = d.loc[m, c].fillna(pd.Series(got[c].to_numpy(), index=d.index[m]))
+        print(f"  ecens_old {lg}: ECMWF ENS on {before:.0%} -> {d.loc[m, 'ecens_snow_q50'].notna().mean():.0%} "
+              f"of rows", flush=True)
+    add_ref(d)
+    return {"df": gbm.add_oof_ratio(d)}
+
+
+def _allst(frac: float):
+    """Rows for `frac` of the stations the table leaves out (arch.py: every
+    station of the league), trained on and never scored, so the scored rows
+    stay the base's. Like the network sample, they have no Open-Meteo columns."""
+    def f(df):
+        from .. import arch, nbhd, truth, wndx
+        from ..contract import stations
+        from ..dataset import HF_LEAGUES, assemble, season_of
+
+        leagues = [lg for lg in sorted(df["league"].unique()) if lg in HF_LEAGUES]
+        arch.pull(leagues)
+        parts = []
+        for lg in leagues:
+            have = set(df.loc[df["league"] == lg, "station_id"].unique())
+            rest = sorted(set(stations(lg).index) - have)
+            if not rest:
+                continue
+            pick = set(np.random.default_rng(5).choice(rest, max(1, int(len(rest) * frac)), replace=False))
+            e = arch.load(lg)
+            e = e[e["station_id"].isin(pick)]
+            if e.empty:
+                continue
+            X = assemble(e, pd.DataFrame(), lg)
+            r = X.merge(truth.windows(truth.hf_daily(lg, begin=min(X["round_date"]))), on=ARCH_KEYS, how="inner")
+            r["league"], r["featured"] = lg, 0
+            r["season"] = season_of(r["round_date"], lg)
+            print(f"  allst {lg}: +{r['station_id'].nunique()} stations, +{len(r)} rows", flush=True)
+            parts.append(r)
+        if not parts:
+            return {}
+        extra = wndx.join(nbhd.join(pd.concat(parts, ignore_index=True)))
+        extra = gbm.add_oof_ratio(extra)  # their own station ratios, out of season like the base's
+        extra = extra[[c for c in df.columns if c in extra]]
+        f64 = [c for c in extra.select_dtypes("float64").columns if c != "truth_in"]
+        extra[f64] = extra[f64].astype("float32")
+        base = df.assign(aug=df["aug"] if "aug" in df else 0)
+        return {"df": pd.concat([base, extra.assign(aug=1)], ignore_index=True)}
+    return f
+
+
 VARIANTS = {
+    "no_om": _no_om,
+    "ecens_old": _ecens_old,
+    "allst25": _allst(0.25),
+    "allst50": _allst(0.5),
     "hsp": lambda df: {"df": __import__("dpow.hsp", fromlist=["join"]).join(df), "extra": ("hsp_",)},
     # gefx (GEFS 31-member timing): -0.08, mean-only +0.10 on 2026-11-17; removed
     # wndx (storm wind + moisture): +0.52 every fold up, ADOPTED 2026-11-17; flow-only +0.10

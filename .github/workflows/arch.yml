@@ -1,0 +1,48 @@
+# Harvest the every-station archive (src/dpow/arch.py): dynamical.org round
+# features for every station of each league (not only the featured ones and
+# the sibling's network sample) and ECMWF ENS back to 2020-10. No Open-Meteo.
+# One job per league x dataset, time-boxed and resumable (finished units are
+# assets of the `arch-<year>` releases): rerun until every job reports 0 to go.
+name: Every-station archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      leagues:
+        description: "JSON list of leagues"
+        default: '["stations", "observers", "alps"]'
+      datasets:
+        description: "JSON list of datasets"
+        default: '["ecens", "gefs", "gfs", "hrrr", "aifs", "aifsens"]'
+      minutes:
+        description: "Time budget per job"
+        default: "300"
+      parallel:
+        description: "Jobs at a time (the account's runners are shared with the live keepers)"
+        default: "6"
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+  GH_TOKEN: ${{ github.token }}
+
+concurrency:
+  group: arch
+  cancel-in-progress: false
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.parallel) }}
+      matrix:
+        league: ${{ fromJSON(inputs.leagues) }}
+        dataset: ${{ fromJSON(inputs.datasets) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: dpow arch -l "${{ matrix.league }}" -d "${{ matrix.dataset }}" --minutes "${{ inputs.minutes }}"
