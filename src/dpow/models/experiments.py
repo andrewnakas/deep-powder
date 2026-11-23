@@ -202,7 +202,11 @@ def _ecens_old(df):
         before = d.loc[m, "ecens_snow_q50"].notna().mean()
         for c in cols:
             if c in got:
-                d.loc[m, c] = d.loc[m, c].fillna(pd.Series(got[c].to_numpy(), index=d.index[m]))
+                # in the table's own dtype: pandas refuses float64 values into a float32 column
+                col = d[c].to_numpy(dtype="float32" if d[c].dtype.kind != "f" else None, copy=True)
+                new = got[c].to_numpy(dtype=col.dtype, na_value=np.nan)
+                col[m] = np.where(np.isnan(col[m]), new, col[m])
+                d[c] = col
         print(f"  ecens_old {lg}: ECMWF ENS on {before:.0%} -> {d.loc[m, 'ecens_snow_q50'].notna().mean():.0%} "
               f"of rows", flush=True)
     add_ref(d)
