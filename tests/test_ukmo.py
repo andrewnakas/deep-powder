@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 from dpow import ukmo
@@ -46,3 +47,35 @@ def test_hourly_puts_local_days_on_the_previous_runs_leads():
     assert (h.groupby("lead").size().loc[1:3] == 24).all()
     # linear between the 3-hourly values, then 0.65 C colder for 100 m above the cell's terrain
     assert abs(h.iloc[0]["temperature_2m"] - (1.0 - 0.65)) < 1e-4
+
+
+def test_windows_from_one_unit_at_a_time_matches_all_at_once(tmp_path, monkeypatch):
+    from dpow import features, ukmo
+
+    st = pd.DataFrame({"latitude": [40.6], "longitude": [-111.6], "elevation_ft": [9000.0]}, index=["s1"])
+    monkeypatch.setattr(ukmo, "stations", lambda: st)
+    monkeypatch.setattr(features, "terrain", lambda: pd.DataFrame({"elev_delta_14km": [0.0]}, index=["s1"]))
+    rng = np.random.default_rng(1)
+    files = []
+    for month, days in (("2025-01", range(26, 32)), ("2025-02", range(1, 6))):
+        rows = []
+        for d in days:
+            run = pd.Timestamp(f"{month}-{d:02d} 12:00")
+            r = {"station_id": "s1", "run": run}
+            r |= {f"pr_{h:03d}": float(rng.gamma(0.5, 1.0)) for h in range(1, ukmo.MAX_LEAD + 1)}
+            r |= {f"t2_{h:02d}": float(-5 + rng.normal()) for h in ukmo.T_LEADS}
+            r |= {f"td_{h:02d}": np.nan for h in ukmo.T_LEADS}
+            rows.append(r)
+        p = tmp_path / f"ukmo__12z__{month}.parquet"
+        pd.DataFrame(rows).to_parquet(p)
+        files.append(p)
+    split = ukmo.windows_from(files, "m")
+    raw = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
+    one = tmp_path / "one" / "ukmo__12z__all.parquet"
+    one.parent.mkdir()
+    raw.to_parquet(one)
+    whole = ukmo.windows_from([one], "m")
+    keys = ["station_id", "round_date", "horizon_h"]
+    a, b = split.sort_values(keys).reset_index(drop=True), whole.sort_values(keys).reset_index(drop=True)
+    assert len(a) == len(b) > 0
+    pd.testing.assert_frame_equal(a[b.columns], b, check_dtype=False)
