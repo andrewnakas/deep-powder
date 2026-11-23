@@ -237,6 +237,29 @@ def _ukmo(mode: str):
     return f
 
 
+# Open-Meteo models that also exist at the original source, free, with an archive:
+# ECMWF open data (AWS), dynamical.org GFS/HRRR, the Met Office bucket (ukmo.py), NBM (AWS)
+DIRECT_MODELS = ("ecmwf_ifs025", "gfs_seamless", "ukmo_seamless", "ncep_nbm_conus", "ncep_hrrr_conus")
+# summary columns that features.summarize rebuilds from the per-model columns
+REBUILT = ("cons_slr", "mean_slr", "max_slr", "min_slr", "sd_slr", "nsnow", "cons_snow", "max_snow", "sd_snow",
+           "cons_prcp", "cons_swe", "cons_twet", "nmod", "frac_snowy", "q25_slr", "q75_slr")
+
+
+def _only(keep: tuple[str, ...]):
+    """Open-Meteo's block with only the `keep` models: the others blanked, the
+    consensus rebuilt from what is left, and the per-day/next/prev medians
+    (which summarize cannot rebuild and were taken over every model) blanked."""
+    def f(df):
+        models = sorted({c.split("__", 1)[1] for c in df.columns if c.startswith("slr__")})
+        gone = [m for m in models if m not in keep]
+        cols = [c for m in gone for c in _model_cols(df, m)]
+        cols += [c for c in df.columns if (c.startswith("cons_") and c not in REBUILT)
+                 or c.startswith(("sd_slr_d", "max_slr_d"))]
+        print(f"  only {keep}: blanking {gone} and {len(cols)} columns", flush=True)
+        return {"df": gbm.add_oof_ratio(_resummarize(_blank(df, cols)))}
+    return f
+
+
 def _allst(frac: float):
     """Rows for `frac` of the stations the table leaves out (arch.py: every
     station of the league), trained on and never scored, so the scored rows
@@ -282,6 +305,8 @@ VARIANTS = {
     "ukmo_fill": _ukmo("fill"),
     "no_om_ukmo": _ukmo("no_om"),
     "no_om": _no_om,
+    "only_direct": _only(DIRECT_MODELS),
+    "only_ecmwf_gfs": _only(("ecmwf_ifs025", "gfs_seamless")),
     "ecens_old": _ecens_old,
     "allst25": _allst(0.25),
     "allst50": _allst(0.5),
