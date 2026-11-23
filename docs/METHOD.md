@@ -71,6 +71,30 @@ gains (`experiment.yml`).
   season. The direct harvests cover every station on every round, so filling the block from them
   (`ecop_fill`, `direct_fill`) is the next test.
 
+## GFS and HRRR at every station (`dynom.py`, adopted 2026-11-23)
+Open-Meteo's `gfs_seamless` and `ncep_hrrr_conus` columns are filled, where Open-Meteo gave none,
+with the same models read from dynamical.org's archives (GFS from 2021-05, HRRR from 2018-08 over
+the contiguous US): the 12Z run of the day before the round at every station's grid point, laid
+out and windowed exactly like the Open-Meteo models (lead i+1 for day i). The cross-model
+summaries (`cons_slr`, `nmod`, …) and `ref_snow` are rebuilt on the filled rows. GFS goes from 13%
+to 85% of rows, HRRR from 7% to 31%.
+- **`dyn_fill`:** +0.44 pooled (45.96 → 46.40), every season up (46.9 → 47.6, 43.6 → 43.8,
+  47.4 → 47.8), every league (alps 50.7 → 51.2, observers 41.8 → 42.2, stations 47.7 → 48.2) and
+  every horizon (24 h 36.9 → 37.5); 6+ in. MAE 4.56 → 4.50. Peak memory 10.4 GB.
+- **The first GFS-only run read −0.41, and it was a broken test.** The direct models have no
+  snowfall field, so with GFS on most rows the snowfall share among rows with a model fell below
+  `gbm.snow_ready`'s 80%, and the whole snowfall family (12 features) was dropped. Experiments that
+  add or fill direct models now keep the base table's snowfall decision.
+- **Snowfall:** derived as precipitation × percent frozen × 0.7 cm/mm, it does not match
+  Open-Meteo's GFS snowfall well enough to fill that column (140 stations, 2025-01-02..12 rounds:
+  total ratio 1.39, correlation 0.69; precipitation itself 0.92 and 0.93). HRRR's follows
+  Open-Meteo's (correlation 0.92) but 28% higher. Snowfall therefore stays out of the fill; it is
+  kept in the units for a separate test.
+- **Live:** `predict.build` reads the round's run at every station and fills the same columns
+  (when the league's cutoff comes before the 12Z run is out, the newest earlier 12Z run, its days
+  shifted). The daily pipeline adds the newest runs to this month's and last month's units and
+  rebuilds the windows file (`dpow dynom-update`), so recent training rounds are filled too.
+
 ---
 
 # Inherited from open-powder-ensemble
