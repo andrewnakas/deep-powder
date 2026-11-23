@@ -239,8 +239,15 @@ def _direct(names: tuple[str, ...], mode: str):
     """Models read straight from their producers' open data (ukmo.py, ecop.py)
     for every station: `add` = their own model columns; `fill` = into the
     Open-Meteo model's columns where Open-Meteo gave none, consensus rebuilt;
-    `no_om` = instead of every Open-Meteo column."""
+    `no_om` = instead of every Open-Meteo column.
+
+    The direct models have no snowfall field, so with `add`/`fill` most rows
+    gain a model but no snowfall, and `gbm.snow_ready` would read that as an
+    unfinished snowfall harvest and drop the whole snowfall family (12
+    features: gfs_fill on 2026-11-23 lost them). Those variants keep the
+    base table's decision."""
     def f(df):
+        ready = gbm.snow_ready(df)
         d = _blank(df, [c for c in df.columns if c.startswith(OM_PREFIXES)]) if mode == "no_om" else df
         for name in names:
             w = _direct_windows(name)
@@ -263,7 +270,7 @@ def _direct(names: tuple[str, ...], mode: str):
             d = _resummarize(d)
         elif mode == "no_om":  # the consensus columns now come from the direct models alone
             d = gbm.add_oof_ratio(_resummarize(d))
-        return {"df": d}
+        return {"df": d} if mode == "no_om" else {"df": d, "snow": ready}
     return f
 
 
@@ -343,6 +350,9 @@ VARIANTS = {
     "direct_fill": _direct(("ecop", "ukmo"), "fill"),
     "no_om_direct": _direct(("ecop", "ukmo"), "no_om"),
     "gfs_fill": _direct(("gfs_dyn",), "fill"),
+    "hrrr_fill": _direct(("hrrr_dyn",), "fill"),
+    "dyn_fill": _direct(("gfs_dyn", "hrrr_dyn"), "fill"),
+    "gfs_add": _direct(("gfs_dyn",), "add"),
     "direct_fill_all": _direct(("ecop", "ukmo", "gfs_dyn", "hrrr_dyn"), "fill"),
     "no_om_direct_all": _direct(("ecop", "ukmo", "gfs_dyn", "hrrr_dyn"), "no_om"),
     "no_om": _no_om,
@@ -418,7 +428,7 @@ def breakdown(oof: pd.DataFrame) -> dict:
 def evaluate(df: pd.DataFrame, name: str, params: dict, folds: list) -> dict:
     spec = VARIANTS[name](df) if name != "base" else {}
     d = spec.get("df", df)
-    feats = [f for f in gbm.feature_list(d, spec.get("extra", ()))
+    feats = [f for f in gbm.feature_list(d, spec.get("extra", ()), snow=spec.get("snow"))
              if not any(x in f for x in spec.get("drop", ()))]
     oof: list = []
     r = gbm.cross_validate(d, feats, {**params, **spec.get("params", {})}, folds, weight=spec.get("weight"),

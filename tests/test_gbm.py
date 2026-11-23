@@ -85,3 +85,13 @@ def test_featured_rows_weigh_more_in_training(monkeypatch):
     assert set(w) == {1.0, gbm.FEATURED_WEIGHT} and (w > 1).sum() == df["featured"].sum()
     b = gbm.fit(df)
     assert len(gbm.predict(b, df.drop(columns=["truth_in"]))) == len(df)
+
+
+def test_snowfall_family_follows_the_override():
+    """A row with models but no snowfall (a direct-source fill) must not switch
+    the models' own snowfall off when the variant keeps the base's decision."""
+    df = _seasons().assign(nmod=1, nsnow=0, cons_snow=1.0, snow__x=1.0)
+    assert not gbm.snow_ready(df)
+    assert "cons_snow" not in gbm.feature_list(df)
+    assert {"cons_snow", "snow__x"} <= set(gbm.feature_list(df, snow=True))
+    assert "cons_snow" not in gbm.feature_list(df.assign(nsnow=3), snow=False)
