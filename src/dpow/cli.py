@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -464,8 +465,6 @@ def nbhd(league: str = typer.Option(...), season: int = typer.Option(0, help="0:
     """Harvest the hourly-GFS neighbourhood and timing features (nbhd.py, or hrrx.py) for
     every round of one league and season in the training table; resumes from
     the `nbhd` release and publishes back to it."""
-    import time
-
     import pandas as pd
 
     from . import gefx, hrrx, hsp, nbmx, store, wndx
@@ -546,7 +545,9 @@ def arch(league: list[str] = typer.Option(["stations", "observers", "alps", "era
     `-d gfs_om` / `-d hrrr_om`: the 12Z run at every station in the
     Open-Meteo model layout instead (dynom.py; leagues ignored). `-d ecop` /
     `-d ukmo`: the ECMWF HRES / Met Office 12Z harvests (ecop.py, ukmo.py),
-    so they can run here while their own workflow is not on main."""
+    so they can run here while their own workflow is not on main. Once the
+    `_om` months are complete, part 0 also adds this month's runs and
+    publishes the windows file (`dynom.update`)."""
     from . import arch as ar
 
     if dataset and set(dataset) <= {"ecop", "ukmo"}:
@@ -562,7 +563,10 @@ def arch(league: list[str] = typer.Option(["stations", "observers", "alps", "era
     if om:
         from . import dynom
 
+        t0 = time.time()
         res = dynom.run(om, minutes, part=part, parts=parts)
+        if not res["remaining"] and part == 0:  # months complete: this month's runs and the windows file too
+            res["update"] = dynom.update(om, max(5.0, minutes - (time.time() - t0) / 60))
         _summary(f"dynom {','.join(om)} part {part}/{parts}: {res}")
         return
     res = ar.run(list(league), list(dataset) if dataset else None, minutes, part=part, parts=parts)
