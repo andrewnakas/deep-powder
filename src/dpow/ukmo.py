@@ -312,3 +312,61 @@ def pull() -> None:
 def load(hour: int = 12) -> pd.DataFrame:
     files = sorted(DIR.glob(f"{TAG}__{hour:02d}z__*.parquet"))
     return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True) if files else pd.DataFrame()
+
+
+# ---- features: the same daily rows and round windows as an Open-Meteo model ----
+
+MODEL = "ukmo_mo"
+LAPSE_K_PER_M = 0.0065
+
+
+def hourly(raw: pd.DataFrame, st: pd.DataFrame, delta_m: pd.Series) -> pd.DataFrame:
+    """Harvested runs (one run hour) -> `features.daily` input: hourly
+    precipitation and 2 m temperature moved to the station's height, in
+    station-local time. `lead` = local days after the run's UTC date, so
+    day D from the 12Z run of D-1 is lead 1, as in Open-Meteo's
+    previous-runs archive."""
+    from .ens_features import station_tz
+
+    h = np.arange(1, MAX_LEAD + 1)
+    P = raw[[f"pr_{x:03d}" for x in h]].to_numpy(np.float32)
+    T3 = raw[[f"t2_{x:02d}" for x in T_LEADS]].to_numpy(np.float32)
+    lo = np.minimum(h // 3, len(T_LEADS) - 2)
+    fr = ((h - lo * 3) / 3.0).astype(np.float32)
+    T = T3[:, lo] * (1 - fr) + T3[:, lo + 1] * fr  # hourly, linear between the 3-hourly values
+    dz = delta_m.reindex(raw["station_id"]).fillna(0.0).to_numpy(np.float32)
+    T -= LAPSE_K_PER_M * dz[:, None]
+    tz = station_tz(st.loc[st.index.isin(raw["station_id"].unique())])
+    n = len(raw)
+    sid = np.repeat(raw["station_id"].to_numpy(), len(h))
+    run = np.repeat(pd.to_datetime(raw["run"]).to_numpy(), len(h))
+    utc = pd.DatetimeIndex(run + np.tile(h.astype("timedelta64[h]"), n))
+    local = np.empty(len(utc), dtype="datetime64[ns]")
+    zones = tz.reindex(sid).to_numpy()
+    for z in pd.unique(zones):
+        m = zones == z
+        local[m] = utc[m].tz_localize("UTC").tz_convert(z).tz_localize(None).to_numpy()
+    local = pd.DatetimeIndex(local)
+    day = (local - pd.Timedelta(hours=1)).normalize()
+    lead = ((day - pd.DatetimeIndex(run).normalize()) // pd.Timedelta(days=1)).astype(np.int16)
+    return pd.DataFrame({"station_id": sid, "model": MODEL, "lead": lead, "time": local,
+                         "precipitation": P.ravel(), "temperature_2m": T.ravel(), "snowfall": np.nan})
+
+
+def windows(hour: int = 12) -> pd.DataFrame:
+    """Per (station_id, round_date, horizon_h): `<var>__ukmo_mo` columns built
+    like the Open-Meteo models' (features.daily -> archive_windows)."""
+    from . import features
+
+    files = sorted(DIR.glob(f"{TAG}__{hour:02d}z__*.parquet"))
+    if not files:
+        return pd.DataFrame(columns=["station_id", "round_date", "horizon_h"])
+    st = stations()
+    terr = features.terrain()
+    delta = terr["elev_delta_14km"] if "elev_delta_14km" in terr else pd.Series(dtype=float)
+    dly = pd.concat([features.daily(hourly(pd.read_parquet(f), st, delta)) for f in files], ignore_index=True)
+    win = features.archive_windows(dly)
+    keys = ["station_id", "round_date", "horizon_h"]
+    p = win.pivot_table(index=keys, columns="model", values=list(features.WIN_VARS), aggfunc="first")
+    p.columns = [f"{v}__{m}" for v, m in p.columns]
+    return p.reset_index()

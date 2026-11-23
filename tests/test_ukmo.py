@@ -30,3 +30,19 @@ def test_units_are_complete_months_oldest_first():
     assert all(m <= pd.Period("2025-01", "M") for _, m in u)
     runs = ukmo.runs_in(12, pd.Period("2024-11", "M"), pd.Timestamp("2025-02-10"))
     assert runs[0] == pd.Timestamp("2024-11-21 12:00") and len(runs) == 10
+
+
+def test_hourly_puts_local_days_on_the_previous_runs_leads():
+    st = pd.DataFrame({"latitude": [40.6], "longitude": [-111.6], "elevation_ft": [8000.0]},
+                      index=pd.Index(["a"], name="station_id"))
+    row = {"station_id": "a", "run": pd.Timestamp("2025-12-01 12:00")}
+    row |= {f"pr_{h:03d}": 1.0 for h in range(1, ukmo.MAX_LEAD + 1)}
+    row |= {f"t2_{h:02d}": float(h) for h in ukmo.T_LEADS} | {f"td_{h:02d}": 0.0 for h in ukmo.T_LEADS}
+    h = ukmo.hourly(pd.DataFrame([row]), st, pd.Series({"a": 100.0}))
+    assert len(h) == ukmo.MAX_LEAD and (h["model"] == ukmo.MODEL).all()
+    # Utah is UTC-7: the hour ending 07Z Dec 2 (local midnight) closes local Dec 1, lead 0
+    first_d = h[h["lead"] == 1].iloc[0]
+    assert first_d["time"] == pd.Timestamp("2025-12-02 01:00")
+    assert (h.groupby("lead").size().loc[1:3] == 24).all()
+    # linear between the 3-hourly values, then 0.65 C colder for 100 m above the cell's terrain
+    assert abs(h.iloc[0]["temperature_2m"] - (1.0 - 0.65)) < 1e-4

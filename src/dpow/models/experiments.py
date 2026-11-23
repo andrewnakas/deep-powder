@@ -195,6 +195,36 @@ def _ecens_old(df):
     return {"df": gbm.add_oof_ratio(d)}
 
 
+def _ukmo(mode: str):
+    """The Met Office global model straight from its open-data bucket (ukmo.py),
+    for every station: `add` = its own model columns; `fill` = into the
+    ukmo_seamless columns where Open-Meteo gave none, consensus rebuilt;
+    `no_om` = instead of every Open-Meteo column."""
+    def f(df):
+        from .. import ukmo
+
+        ukmo.pull()
+        w = ukmo.windows(12)
+        print(f"  ukmo: {len(w)} round windows, {w['station_id'].nunique() if len(w) else 0} stations", flush=True)
+        w = w.astype({c: "float32" for c in w.columns if "__" in c})
+        d = df.copy()
+        if mode == "no_om":
+            d[[c for c in d.columns if c.startswith(OM_PREFIXES)]] = np.nan
+        d = d.merge(w, on=ARCH_KEYS, how="left")
+        new = [c for c in w.columns if "__" in c]
+        print(f"  ukmo: on {d[new[0]].notna().mean():.0%} of rows", flush=True)
+        if mode == "fill":
+            for c in new:
+                old = c.replace(f"__{ukmo.MODEL}", "__ukmo_seamless")
+                if old in d:
+                    d[old] = d[old].fillna(d[c])
+            d = _resummarize(d.drop(columns=new))
+        elif mode == "no_om":  # the consensus columns now come from the Met Office model alone
+            d = gbm.add_oof_ratio(_resummarize(d))
+        return {"df": d}
+    return f
+
+
 def _allst(frac: float):
     """Rows for `frac` of the stations the table leaves out (arch.py: every
     station of the league), trained on and never scored, so the scored rows
@@ -236,6 +266,9 @@ def _allst(frac: float):
 
 
 VARIANTS = {
+    "ukmo_add": _ukmo("add"),
+    "ukmo_fill": _ukmo("fill"),
+    "no_om_ukmo": _ukmo("no_om"),
     "no_om": _no_om,
     "ecens_old": _ecens_old,
     "allst25": _allst(0.25),
