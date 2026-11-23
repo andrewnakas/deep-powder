@@ -115,7 +115,7 @@ def stations() -> pd.DataFrame:
 # ---- reading one file (runs inside a worker process) ----
 
 _S = None
-FILE_TIMEOUT = 300  # s; a stalled S3 read must not hold up the whole run
+FILE_TIMEOUT = 450  # s; a stalled S3 read must not hold up the whole run (run deadline = 2x)
 
 
 def _fs():
@@ -276,6 +276,20 @@ def units(now: pd.Timestamp) -> list[tuple[int, pd.Period]]:
     return [(h, m) for h in RUN_HOURS for m in months]
 
 
+def _stop_pool(pool: ProcessPoolExecutor) -> None:
+    """Shut a pool down without waiting on a worker stuck in a read: terminate them."""
+    procs = list(getattr(pool, "_processes", {}).values())
+    pool.shutdown(wait=False, cancel_futures=True)
+    for pr in procs:
+        if pr.is_alive():
+            pr.terminate()
+
+
+def _fresh_pool(pool: ProcessPoolExecutor, workers: int) -> ProcessPoolExecutor:
+    _stop_pool(pool)
+    return ProcessPoolExecutor(workers)
+
+
 def run(minutes: float, workers: int = 16, hours: tuple[int, ...] = RUN_HOURS) -> dict:
     now = pd.Timestamp.utcnow().tz_localize(None)
     deadline = time.time() + minutes * 60
@@ -292,7 +306,8 @@ def run(minutes: float, workers: int = 16, hours: tuple[int, ...] = RUN_HOURS) -
                         (now - pd.Timedelta(days=1)).normalize() + pd.Timedelta(hours=12))
     print(f"ukmo: {len(st)} stations in {len(set(zip(iy // CHUNK, ix // CHUNK)))} chunks", flush=True)
     done = 0
-    with ProcessPoolExecutor(workers) as pool:
+    pool = ProcessPoolExecutor(workers)
+    try:
         for hour, month in todo:
             t0 = time.time()
             frames, missing = [], 0
@@ -300,12 +315,17 @@ def run(minutes: float, workers: int = 16, hours: tuple[int, ...] = RUN_HOURS) -
                 if time.time() > deadline:
                     print("  time budget reached", flush=True)
                     return {"done": done, "remaining": len(todo) - done}
-                t1 = time.time()
-                try:
-                    df = harvest_run(r, st, iy, ix, pool)
-                except Exception as e:  # keep the unit; the run stays missing
-                    print(f"  {r}: {type(e).__name__}: {str(e)[:160]}", flush=True)
-                    df = None
+                df = None
+                for _ in range(2):  # a stalled worker gets a fresh pool and the run a second try
+                    t1 = time.time()
+                    try:
+                        df = harvest_run(r, st, iy, ix, pool)
+                    except Exception as e:
+                        print(f"  {r}: {type(e).__name__}: {str(e)[:160]}", flush=True)
+                        if isinstance(e, TimeoutError):
+                            pool = _fresh_pool(pool, workers)
+                        continue
+                    break
                 print(f"    {r:%Y-%m-%d %HZ}: {'missing' if df is None else 'ok'}, {time.time() - t1:.0f}s", flush=True)
                 if df is None:
                     missing += 1
@@ -320,6 +340,8 @@ def run(minutes: float, workers: int = 16, hours: tuple[int, ...] = RUN_HOURS) -
             done += 1
             print(f"  {p.name}: {len(frames)} runs ({missing} missing), {p.stat().st_size / 1e6:.0f} MB, "
                   f"{time.time() - t0:.0f}s", flush=True)
+    finally:
+        _stop_pool(pool)
     return {"done": done, "remaining": len(todo) - done}
 
 
