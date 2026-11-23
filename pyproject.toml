@@ -27,6 +27,7 @@ dependencies = [
     "scipy>=1.11",
     "icechunk>=1.0",
     "eccodes>=2.38",  # NBM GRIB2 (nbmx.py); the wheel bundles the ecCodes library
+    "h5py>=3.10",  # Met Office NetCDF4 chunk index (ukmo.py)
 ]
 
 [project.optional-dependencies]

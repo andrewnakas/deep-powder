@@ -1,0 +1,44 @@
+# Harvest the Met Office global model (Unified Model, ~10 km) at every
+# station from the Met Office's open-data bucket on AWS (src/dpow/ukmo.py).
+# The bucket keeps 2 years and deletes its oldest day daily, so this runs
+# oldest month first and on a schedule; finished months are assets of the
+# `ukmo` release (CC BY-SA 4.0, British Crown copyright, the Met Office).
+name: Met Office archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "Run hours (UTC), space separated"
+        default: "12 0"
+      minutes:
+        description: "Time budget"
+        default: "320"
+      workers:
+        description: "Parallel file readers"
+        default: "32"
+  schedule:
+    - cron: "17 6 3 * *"  # monthly, once the previous month is complete
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+  GH_TOKEN: ${{ github.token }}
+
+concurrency:
+  group: ukmo
+  cancel-in-progress: false
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: |
+          args=""
+          for h in ${{ inputs.hours || '12 0' }}; do args="$args --hour $h"; done
+          dpow ukmo $args --minutes "${{ inputs.minutes || '320' }}" --workers "${{ inputs.workers || '32' }}"

@@ -546,6 +546,19 @@ def arch(league: list[str] = typer.Option(["stations", "observers", "alps", "era
 
 
 @app.command()
+def ukmo(hour: list[int] = typer.Option([12, 0], "--hour", help="Run hours (UTC) to harvest"),
+         minutes: float = typer.Option(300, help="Stop after this long"),
+         workers: int = typer.Option(32, help="Processes reading files in parallel")):
+    """Harvest the Met Office global model at every station straight from the
+    Met Office's open-data bucket (ukmo.py), oldest month first: the bucket
+    is a 2-year rolling archive. Resumable."""
+    from . import ukmo as uk
+
+    res = uk.run(minutes, workers, tuple(hour))
+    _summary(f"ukmo {','.join(map(str, hour))}Z: {res}")
+
+
+@app.command()
 def ana(league: str = typer.Option(...), source: str = typer.Option(..., help="hrrr or gefs"),
         minutes: int = typer.Option(300, help="Stop starting new winters after this long")):
     """Harvest daily analysis snow at every station of a league (ana.py), one
