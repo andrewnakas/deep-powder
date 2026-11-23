@@ -52,6 +52,14 @@ gains (`experiment.yml`).
   (46.9 → 46.8, 43.6 → 43.3, 47.4 → 47.9); the stations league is unchanged (47.7). Harvest stays
   published (`nbhd` release, prefix `hsp_`).
 
+## How much the Open-Meteo multi-model block is worth
+- **No Open-Meteo at all** (`no_om`, 2026-11-23): every per-model column and every consensus built
+  from them blanked, so what is left is dynamical.org's ensembles and GFS/HRRR/AIFS, the snowpack
+  and the static columns. −8.02 pooled (45.96 → 37.94), every season down (46.9 → 35.3,
+  43.6 → 37.9, 47.4 → 40.6) and every league (alps 50.7 → 40.8, observers 41.8 → 33.4,
+  stations 47.7 → 40.6). The block stays; the work is replacing its models with their original
+  sources (the Met Office bucket, `ukmo.py`; ECMWF open data) for every station.
+
 ---
 
 # Inherited from open-powder-ensemble
