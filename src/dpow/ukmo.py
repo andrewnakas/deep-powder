@@ -115,6 +115,16 @@ def stations() -> pd.DataFrame:
 # ---- reading one file (runs inside a worker process) ----
 
 _S = None
+FILE_TIMEOUT = 300  # s; a stalled S3 read must not hold up the whole run
+
+
+def _fs():
+    """fsspec HTTP with timeouts: without them one stalled read waits forever."""
+    import aiohttp
+    import fsspec
+
+    return fsspec.filesystem("http", client_kwargs={
+        "timeout": aiohttp.ClientTimeout(total=180, sock_connect=30, sock_read=60)})
 
 
 def _session():
@@ -129,11 +139,10 @@ def _session():
 @cache
 def _grid(run: pd.Timestamp) -> tuple[np.ndarray, np.ndarray]:
     """The model grid (the same for every run): latitudes, longitudes."""
-    import fsspec
     import h5py
 
     url = file_url(run, 0, "td")
-    with fsspec.filesystem("http").open(url, "rb", block_size=32 * 1024, cache_type="blockcache") as fo:
+    with _fs().open(url, "rb", block_size=32 * 1024, cache_type="blockcache") as fo:
         f = h5py.File(fo)
         return f["latitude"][:].astype(np.float64), f["longitude"][:].astype(np.float64)
 
@@ -149,11 +158,10 @@ def grid_index(lat: np.ndarray, lon: np.ndarray, run: pd.Timestamp) -> tuple[np.
 def read_points(url: str, iy: np.ndarray, ix: np.ndarray, levels: tuple[int, ...] = ()) -> np.ndarray | None:
     """Values at grid cells (iy, ix) of the file's main field; with `levels`
     (hPa), one row per level. None when the file does not exist."""
-    import fsspec
     import h5py
 
     try:
-        fo = fsspec.filesystem("http").open(url, "rb", block_size=32 * 1024, cache_type="blockcache")
+        fo = _fs().open(url, "rb", block_size=32 * 1024, cache_type="blockcache")
     except FileNotFoundError:
         return None
     with fo:
@@ -224,8 +232,16 @@ def harvest_run(run: pd.Timestamp, st: pd.DataFrame, iy, ix, pool) -> pd.DataFra
     if not run_exists(run):
         return None
     got = {}
-    for key, lead, v in pool.map(_read_task, [(k, u, h, iy, ix) for k, u, h in tasks(run)], chunksize=2):
-        got[key, lead] = v
+    futs = [pool.submit(_read_task, (k, u, h, iy, ix)) for k, u, h in tasks(run)]
+    t_end = time.time() + FILE_TIMEOUT * 2
+    try:
+        for fu in futs:  # a worker that still hangs past this costs the run, not the job
+            key, lead, v = fu.result(timeout=max(1.0, t_end - time.time()))
+            got[key, lead] = v
+    except BaseException:
+        for fu in futs:
+            fu.cancel()
+        raise
     n = len(st)
     nan = np.full(n, np.nan, np.float32)
     cols = {}
@@ -284,11 +300,13 @@ def run(minutes: float, workers: int = 16, hours: tuple[int, ...] = RUN_HOURS) -
                 if time.time() > deadline:
                     print("  time budget reached", flush=True)
                     return {"done": done, "remaining": len(todo) - done}
+                t1 = time.time()
                 try:
                     df = harvest_run(r, st, iy, ix, pool)
-                except Exception as e:  # keep the unit; a run that fails twice stays missing
+                except Exception as e:  # keep the unit; the run stays missing
                     print(f"  {r}: {type(e).__name__}: {str(e)[:160]}", flush=True)
                     df = None
+                print(f"    {r:%Y-%m-%d %HZ}: {'missing' if df is None else 'ok'}, {time.time() - t1:.0f}s", flush=True)
                 if df is None:
                     missing += 1
                 else:
