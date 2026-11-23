@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .. import features
+from .. import features, store
 from . import gbm
 
 ADOPT_GAIN = 0.3  # pooled-mean gain needed, with every fold up
@@ -209,32 +209,61 @@ def _ecens_old(df):
     return {"df": gbm.add_oof_ratio(d)}
 
 
-def _ukmo(mode: str):
-    """The Met Office global model straight from its open-data bucket (ukmo.py),
-    for every station: `add` = its own model columns; `fill` = into the
-    ukmo_seamless columns where Open-Meteo gave none, consensus rebuilt;
+# harvested straight from the producer's open data: module -> the Open-Meteo model it stands in for
+DIRECT_SOURCES = {"ukmo": "ukmo_seamless", "ecop": "ecmwf_ifs025"}
+
+
+def _direct_windows(name: str) -> pd.DataFrame:
+    """The module's round windows: the precomputed asset when there is one
+    (`<tag>__windows__12z.parquet`, built by `dpow direct-windows`), else built here."""
+    import importlib
+
+    mod = importlib.import_module(f"dpow.{name}")
+    asset = f"{mod.TAG}__windows__12z.parquet"
+    store.pull(mod.TAG, mod.DIR, asset, overwrite=True)
+    if (mod.DIR / asset).exists():
+        w = pd.read_parquet(mod.DIR / asset)
+    else:
+        mod.pull()
+        w = mod.windows(12)
+    w["round_date"] = pd.to_datetime(w["round_date"]).dt.date
+    return w.astype({c: "float32" for c in w.columns if "__" in c})
+
+
+def _direct(names: tuple[str, ...], mode: str):
+    """Models read straight from their producers' open data (ukmo.py, ecop.py)
+    for every station: `add` = their own model columns; `fill` = into the
+    Open-Meteo model's columns where Open-Meteo gave none, consensus rebuilt;
     `no_om` = instead of every Open-Meteo column."""
     def f(df):
-        from .. import ukmo
-
-        ukmo.pull()
-        w = ukmo.windows(12)
-        print(f"  ukmo: {len(w)} round windows, {w['station_id'].nunique() if len(w) else 0} stations", flush=True)
-        w = w.astype({c: "float32" for c in w.columns if "__" in c})
         d = _blank(df, [c for c in df.columns if c.startswith(OM_PREFIXES)]) if mode == "no_om" else df
-        d = _attach(d, w)
-        new = [c for c in w.columns if "__" in c]
-        print(f"  ukmo: on {d[new[0]].notna().mean():.0%} of rows", flush=True)
+        for name in names:
+            w = _direct_windows(name)
+            print(f"  {name}: {len(w)} round windows, {w['station_id'].nunique() if len(w) else 0} stations",
+                  flush=True)
+            new = [c for c in w.columns if "__" in c]
+            d = _attach(d, w)
+            print(f"  {name}: on {d[new[0]].notna().mean():.0%} of rows", flush=True)
+            if mode == "fill":
+                om = DIRECT_SOURCES[name]
+                for c in new:
+                    old = c.rsplit("__", 1)[0] + "__" + om
+                    if old in d:
+                        before = d[old].notna().mean()
+                        d[old] = d[old].fillna(d[c])
+                        if c == new[0]:
+                            print(f"  {old}: {before:.0%} -> {d[old].notna().mean():.0%} of rows", flush=True)
+                d = d.drop(columns=new)
         if mode == "fill":
-            for c in new:
-                old = c.replace(f"__{ukmo.MODEL}", "__ukmo_seamless")
-                if old in d:
-                    d[old] = d[old].fillna(d[c])
-            d = _resummarize(d.drop(columns=new))
-        elif mode == "no_om":  # the consensus columns now come from the Met Office model alone
+            d = _resummarize(d)
+        elif mode == "no_om":  # the consensus columns now come from the direct models alone
             d = gbm.add_oof_ratio(_resummarize(d))
         return {"df": d}
     return f
+
+
+def _ukmo(mode: str):
+    return _direct(("ukmo",), mode)
 
 
 # Open-Meteo models that also exist at the original source, free, with an archive:
@@ -304,6 +333,10 @@ VARIANTS = {
     "ukmo_add": _ukmo("add"),
     "ukmo_fill": _ukmo("fill"),
     "no_om_ukmo": _ukmo("no_om"),
+    "ecop_add": _direct(("ecop",), "add"),
+    "ecop_fill": _direct(("ecop",), "fill"),
+    "direct_fill": _direct(("ecop", "ukmo"), "fill"),
+    "no_om_direct": _direct(("ecop", "ukmo"), "no_om"),
     "no_om": _no_om,
     "only_direct": _only(DIRECT_MODELS),
     "only_ecmwf_gfs": _only(("ecmwf_ifs025", "gfs_seamless")),

@@ -45,7 +45,7 @@ STEPS = T_LEADS  # 0, 3, ..., 96
 PARAMS = {"tp": "tp", "2t": "t2", "2d": "td"}
 LAYOUTS = ("ifs/0p25/oper", "0p25/oper", "0p4-beta/oper", "ifs/0p4-beta/oper")
 UA = {"User-Agent": "deep-powder (github.com/andrewnakas/deep-powder)"}
-RETRIES = 4
+RETRIES = 7
 _local = threading.local()
 
 
@@ -61,19 +61,21 @@ def _session() -> requests.Session:
 
 
 def _get(url: str, headers: dict | None = None) -> requests.Response | None:
-    """None on 404; retries anything else."""
+    """None on 404/403. S3 answers a too-fast client with 503 SlowDown: back off
+    (up to ~4 min in all) rather than lose the run."""
     for attempt in range(RETRIES):
         try:
             r = _session().get(url, headers=headers, timeout=(30, 90))
-            if r.status_code == 404 or r.status_code == 403:
+            if r.status_code in (403, 404):
                 return None
             r.raise_for_status()
             return r
-        except requests.RequestException:
+        except requests.RequestException as e:
             _local.s = None
             if attempt == RETRIES - 1:
                 raise
-            time.sleep(2 * (attempt + 1))
+            slow = getattr(getattr(e, "response", None), "status_code", None) in (429, 500, 503)
+            time.sleep(min(60, (8 if slow else 2) * 2 ** attempt))
     return None
 
 
@@ -182,7 +184,7 @@ def units(now: pd.Timestamp, hours: tuple[int, ...] = RUN_HOURS) -> list[tuple[i
     return [(h, m) for h in hours for m in nh + rest]
 
 
-def run(minutes: float, workers: int = 12, hours: tuple[int, ...] = RUN_HOURS) -> dict:
+def run(minutes: float, workers: int = 6, hours: tuple[int, ...] = RUN_HOURS) -> dict:
     now = pd.Timestamp.utcnow().tz_localize(None)
     deadline = time.time() + minutes * 60
     have = store.remote_assets(TAG) | {p.name for p in DIR.glob(f"{TAG}__*.parquet")}
@@ -203,11 +205,14 @@ def run(minutes: float, workers: int = 12, hours: tuple[int, ...] = RUN_HOURS) -
                     print("  time budget reached", flush=True)
                     return {"done": done, "remaining": len(todo) - done}
                 t1 = time.time()
-                try:
-                    df = harvest_run(r, st, pool)
-                except Exception as e:  # keep the unit; the run stays missing
-                    print(f"  {r}: {type(e).__name__}: {str(e)[:160]}", flush=True)
-                    df = None
+                df = None
+                for attempt in range(3):  # a throttled run waits and tries again
+                    try:
+                        df = harvest_run(r, st, pool)
+                        break
+                    except Exception as e:
+                        print(f"  {r}: {type(e).__name__}: {str(e)[:160]}", flush=True)
+                        time.sleep(120 * (attempt + 1))
                 print(f"    {r:%Y-%m-%d %HZ}: {'missing' if df is None else 'ok'}, {time.time() - t1:.0f}s", flush=True)
                 if df is None:
                     missing += 1

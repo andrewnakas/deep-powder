@@ -561,13 +561,34 @@ def ukmo(hour: list[int] = typer.Option([12, 0], "--hour", help="Run hours (UTC)
 @app.command()
 def ecop(hour: list[int] = typer.Option([12, 0], "--hour", help="Run hours (UTC) to harvest"),
          minutes: float = typer.Option(300, help="Stop after this long"),
-         workers: int = typer.Option(12, help="Threads reading forecast steps in parallel")):
+         workers: int = typer.Option(6, help="Threads reading forecast steps in parallel (S3 throttles above ~8)")):
     """Harvest ECMWF IFS HRES at every station straight from ECMWF's open data
     on AWS (ecop.py), back to 2023-01. Resumable."""
     from . import ecop as ec
 
     res = ec.run(minutes, workers, tuple(hour))
     _summary(f"ecop {','.join(map(str, hour))}Z: {res}")
+
+
+@app.command("direct-windows")
+def direct_windows(source: str = typer.Argument(..., help="ukmo or ecop"),
+                   pull: bool = typer.Option(True, help="Fetch the harvested months from the release first")):
+    """Round windows (`<var>__<model>` per station, round and horizon) from a
+    direct-source harvest, saved as `<tag>__windows__12z.parquet` in its
+    release, so experiments and training read one small file."""
+    import importlib
+
+    from . import store
+
+    mod = importlib.import_module(f"dpow.{source}")
+    if pull:
+        mod.pull()
+    w = mod.windows(12)
+    p = mod.DIR / f"{mod.TAG}__windows__12z.parquet"
+    w.to_parquet(p, index=False, compression="zstd")
+    store.push(mod.TAG, [p])
+    _summary(f"{source} windows: {len(w)} rows, {w['station_id'].nunique()} stations, "
+             f"{p.stat().st_size / 1e6:.0f} MB")
 
 
 @app.command()
