@@ -544,8 +544,19 @@ def arch(league: list[str] = typer.Option(["stations", "observers", "alps", "era
     """Harvest the every-station archive (arch.py): dynamical.org round features
     for all stations of each league, ECMWF ENS back to 2020-10. Resumable.
     `-d gfs_om` / `-d hrrr_om`: the 12Z run at every station in the
-    Open-Meteo model layout instead (dynom.py; leagues ignored)."""
+    Open-Meteo model layout instead (dynom.py; leagues ignored). `-d ecop` /
+    `-d ukmo`: the ECMWF HRES / Met Office 12Z harvests (ecop.py, ukmo.py),
+    so they can run here while their own workflow is not on main."""
     from . import arch as ar
+
+    if dataset and set(dataset) <= {"ecop", "ukmo"}:
+        from . import ecop as ec
+        from . import ukmo as uk
+
+        for d in dataset:
+            res = ec.run(minutes, 6, (12,)) if d == "ecop" else uk.run(minutes, 32, (12,))
+            _summary(f"{d} 12Z: {res}")
+        return
 
     om = [d[:-3] for d in dataset or [] if d.endswith("_om")]  # Open-Meteo-style columns (dynom.py)
     if om:
