@@ -84,6 +84,13 @@ filled rows. GFS goes from 13% to 85% of rows.
   rows): +0.44, the same as GFS alone, so HRRR is harvested but not filled.
 - **GFS as its own model** (`gfs_add`, `<var>__gfs_dyn` columns beside Open-Meteo's): −0.18. Filling
   the columns the model already knows is what works.
+- **ECMWF HRES and the Met Office on top of GFS**, filling `ecmwf_ifs025` (from ECMWF's open data,
+  `ecop.py`, 7% → 56% of rows) and `ukmo_seamless` (Met Office open data, `ukmo.py`, 11% → 34%):
+  ECMWF 46.34 and the Met Office 46.31, both below GFS alone (46.42); all three 46.57
+  [47.7, 44.0, 48.0], +0.15 over GFS alone with the 2023 season flat, short of the gate. Both
+  archives are young (ECMWF's open data from 2023-01, the Met Office's from 2024-11), so most
+  training seasons never see them. Harvested, not filled; worth another test once they cover
+  more seasons.
 - **The first GFS-only run read −0.41, and it was a broken test.** The direct models have no
   snowfall field, so with GFS on most rows the snowfall share among rows with a model fell below
   `gbm.snow_ready`'s 80%, and the whole snowfall family (12 features) was dropped. Experiments that
