@@ -210,7 +210,8 @@ def _ecens_old(df):
 
 
 # harvested straight from the producer's open data: module -> the Open-Meteo model it stands in for
-DIRECT_SOURCES = {"ukmo": "ukmo_seamless", "ecop": "ecmwf_ifs025"}
+DIRECT_SOURCES = {"ukmo": "ukmo_seamless", "ecop": "ecmwf_ifs025",
+                  "gfs_dyn": "gfs_seamless", "hrrr_dyn": "ncep_hrrr_conus"}  # dynom.py
 
 
 def _direct_windows(name: str) -> pd.DataFrame:
@@ -218,11 +219,15 @@ def _direct_windows(name: str) -> pd.DataFrame:
     (`<tag>__windows__12z.parquet`, built by `dpow direct-windows`), else built here."""
     import importlib
 
-    mod = importlib.import_module(f"dpow.{name}")
-    asset = f"{mod.TAG}__windows__12z.parquet"
+    ds = name.removesuffix("_dyn") if name.endswith("_dyn") else None
+    mod = importlib.import_module("dpow.dynom" if ds else f"dpow.{name}")
+    asset = f"{mod.TAG}__{ds + '__' if ds else ''}windows__12z.parquet"
     store.pull(mod.TAG, mod.DIR, asset, overwrite=True)
     if (mod.DIR / asset).exists():
         w = pd.read_parquet(mod.DIR / asset)
+    elif ds:
+        mod.pull(ds)
+        w = mod.windows(ds)
     else:
         mod.pull()
         w = mod.windows(12)
@@ -337,6 +342,9 @@ VARIANTS = {
     "ecop_fill": _direct(("ecop",), "fill"),
     "direct_fill": _direct(("ecop", "ukmo"), "fill"),
     "no_om_direct": _direct(("ecop", "ukmo"), "no_om"),
+    "gfs_fill": _direct(("gfs_dyn",), "fill"),
+    "direct_fill_all": _direct(("ecop", "ukmo", "gfs_dyn", "hrrr_dyn"), "fill"),
+    "no_om_direct_all": _direct(("ecop", "ukmo", "gfs_dyn", "hrrr_dyn"), "no_om"),
     "no_om": _no_om,
     "only_direct": _only(DIRECT_MODELS),
     "only_ecmwf_gfs": _only(("ecmwf_ifs025", "gfs_seamless")),

@@ -538,9 +538,18 @@ def arch(league: list[str] = typer.Option(["stations", "observers", "alps", "era
          part: int = typer.Option(0, help="This job's share of the missing units (0-based)"),
          parts: int = typer.Option(1, help="Jobs sharing the missing units")):
     """Harvest the every-station archive (arch.py): dynamical.org round features
-    for all stations of each league, ECMWF ENS back to 2020-10. Resumable."""
+    for all stations of each league, ECMWF ENS back to 2020-10. Resumable.
+    `-d gfs_om` / `-d hrrr_om`: the 12Z run at every station in the
+    Open-Meteo model layout instead (dynom.py; leagues ignored)."""
     from . import arch as ar
 
+    om = [d[:-3] for d in dataset or [] if d.endswith("_om")]  # Open-Meteo-style columns (dynom.py)
+    if om:
+        from . import dynom
+
+        res = dynom.run(om, minutes, part=part, parts=parts)
+        _summary(f"dynom {','.join(om)} part {part}/{parts}: {res}")
+        return
     res = ar.run(list(league), list(dataset) if dataset else None, minutes, part=part, parts=parts)
     _summary(f"arch {','.join(league)} {','.join(dataset or ['all'])}: {res}")
 
@@ -571,7 +580,7 @@ def ecop(hour: list[int] = typer.Option([12, 0], "--hour", help="Run hours (UTC)
 
 
 @app.command("direct-windows")
-def direct_windows(source: str = typer.Argument(..., help="ukmo or ecop"),
+def direct_windows(source: str = typer.Argument(..., help="ukmo, ecop, gfs_dyn or hrrr_dyn"),
                    pull: bool = typer.Option(True, help="Fetch the harvested months from the release first")):
     """Round windows (`<var>__<model>` per station, round and horizon) from a
     direct-source harvest, saved as `<tag>__windows__12z.parquet` in its
@@ -580,11 +589,12 @@ def direct_windows(source: str = typer.Argument(..., help="ukmo or ecop"),
 
     from . import store
 
-    mod = importlib.import_module(f"dpow.{source}")
+    ds = source.removesuffix("_dyn") if source.endswith("_dyn") else None
+    mod = importlib.import_module("dpow.dynom" if ds else f"dpow.{source}")
     if pull:
-        mod.pull()
-    w = mod.windows(12)
-    p = mod.DIR / f"{mod.TAG}__windows__12z.parquet"
+        mod.pull(ds) if ds else mod.pull()
+    w = mod.windows(ds) if ds else mod.windows(12)
+    p = mod.DIR / f"{mod.TAG}__{ds + '__' if ds else ''}windows__12z.parquet"
     w.to_parquet(p, index=False, compression="zstd")
     store.push(mod.TAG, [p])
     _summary(f"{source} windows: {len(w)} rows, {w['station_id'].nunique()} stations, "
