@@ -98,3 +98,6 @@ def test_fill_takes_only_open_meteos_gaps_and_rebuilds_their_summaries():
     # a live round without the Open-Meteo block: the twin columns are made
     bare = dynom.fill(df[["station_id", "round_date", "horizon_h", "gefs_snow_q50"]], {"gfs": w})
     assert list(bare["slr__gfs_seamless"]) == [9.0, 3.0] and list(bare["nmod"]) == [1, 1]
+    # datetime64 round dates on one side join all the same
+    ts = dynom.fill(df.assign(round_date=pd.to_datetime(df["round_date"])), {"gfs": w})
+    assert list(ts["slr__gfs_seamless"]) == [2.0, 3.0] and len(ts) == len(df)

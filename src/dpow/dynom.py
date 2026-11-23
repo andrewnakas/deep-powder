@@ -308,7 +308,9 @@ def fill(df: pd.DataFrame, wins: dict[str, pd.DataFrame]) -> pd.DataFrame:
         new = [c for c in w.columns if "__" in c] if w is not None else []
         if not new:
             continue
-        k = d[KEYS].merge(w, on=KEYS, how="left")
+        # round_date is datetime.date in some frames and datetime64 in others: join on one type
+        k = d[KEYS].assign(round_date=pd.to_datetime(d["round_date"])).merge(
+            w.assign(round_date=pd.to_datetime(w["round_date"])), on=KEYS, how="left")
         for c in new:
             twin = c.rsplit("__", 1)[0] + "__" + OM_TWIN[ds]
             v = k[c].to_numpy(np.float32)
