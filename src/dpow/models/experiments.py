@@ -353,6 +353,10 @@ VARIANTS = {
     "hrrr_fill": _direct(("hrrr_dyn",), "fill"),
     "dyn_fill": _direct(("gfs_dyn", "hrrr_dyn"), "fill"),
     "gfs_add": _direct(("gfs_dyn",), "add"),
+    # on top of the adopted GFS fill (gfs_fill +0.46): the ECMWF HRES and Met Office harvests
+    "gfs_ecop_fill": _direct(("gfs_dyn", "ecop"), "fill"),
+    "gfs_ukmo_fill": _direct(("gfs_dyn", "ukmo"), "fill"),
+    "gfs_ecop_ukmo_fill": _direct(("gfs_dyn", "ecop", "ukmo"), "fill"),
     "direct_fill_all": _direct(("ecop", "ukmo", "gfs_dyn", "hrrr_dyn"), "fill"),
     "no_om_direct_all": _direct(("ecop", "ukmo", "gfs_dyn", "hrrr_dyn"), "no_om"),
     "no_om": _no_om,
