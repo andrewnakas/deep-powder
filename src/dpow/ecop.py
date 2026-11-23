@@ -36,6 +36,12 @@ from . import WORK, store
 from .ukmo import T_LEADS, stations
 
 BUCKET = "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com"
+# Google Cloud's mirror of the same files (from 2023-09): slower (~130 KB/s per stream) but it does not
+# answer 503 SlowDown the way the S3 bucket does on busy nights (1 request in 3). S3 first, with few
+# retries, then the mirror.
+GCS = "https://storage.googleapis.com/ecmwf-open-data"
+MIRRORS = (BUCKET, GCS)
+FIRST_TRY_RETRIES = 3
 TAG = "ecop"
 DIR = WORK / "ecop"
 MODEL = "ecmwf_op"
@@ -60,10 +66,10 @@ def _session() -> requests.Session:
     return _local.s
 
 
-def _get(url: str, headers: dict | None = None) -> requests.Response | None:
+def _get(url: str, headers: dict | None = None, retries: int = RETRIES) -> requests.Response | None:
     """None on 404/403. S3 answers a too-fast client with 503 SlowDown: back off
     (up to ~4 min in all) rather than lose the run."""
-    for attempt in range(RETRIES):
+    for attempt in range(retries):
         try:
             r = _session().get(url, headers=headers, timeout=(30, 90))
             if r.status_code in (403, 404):
@@ -72,22 +78,26 @@ def _get(url: str, headers: dict | None = None) -> requests.Response | None:
             return r
         except requests.RequestException as e:
             _local.s = None
-            if attempt == RETRIES - 1:
+            if attempt == retries - 1:
                 raise
             slow = getattr(getattr(e, "response", None), "status_code", None) in (429, 500, 503)
             time.sleep(min(60, (8 if slow else 2) * 2 ** attempt))
     return None
 
 
-def file_url(run: pd.Timestamp, layout: str, step: int, ext: str = "grib2") -> str:
-    return f"{BUCKET}/{run:%Y%m%d}/{run:%H}z/{layout}/{run:%Y%m%d%H}0000-{step}h-oper-fc.{ext}"
+def file_url(run: pd.Timestamp, layout: str, step: int, ext: str = "grib2", base: str = BUCKET) -> str:
+    return f"{base}/{run:%Y%m%d}/{run:%H}z/{layout}/{run:%Y%m%d%H}0000-{step}h-oper-fc.{ext}"
 
 
-def layout_for(run: pd.Timestamp) -> str | None:
-    """The run's directory, or None when the run is not in the bucket."""
-    for lay in LAYOUTS:
-        if _get(file_url(run, lay, 0, "index")) is not None:
-            return lay
+def layout_for(run: pd.Timestamp) -> tuple[str, str] | None:
+    """(mirror, directory) of the run, or None when no mirror has it."""
+    for base in MIRRORS:
+        for lay in LAYOUTS:
+            try:
+                if _get(file_url(run, lay, 0, "index", base), retries=FIRST_TRY_RETRIES) is not None:
+                    return base, lay
+            except requests.RequestException:
+                continue
     return None
 
 
@@ -126,18 +136,29 @@ def cell_index(grid: tuple, lat: np.ndarray, lon: np.ndarray) -> np.ndarray:
     return (np.clip(j, 0, nj - 1).astype(np.int64) * ni + i.astype(np.int64))
 
 
-def _read_step(run: pd.Timestamp, layout: str, step: int, lat, lon) -> dict[str, np.ndarray]:
-    idx = _get(file_url(run, layout, step, "index"))
-    if idx is None:
-        return {}
-    url = file_url(run, layout, step)
+def _read_step(run: pd.Timestamp, loc: tuple[str, str], step: int, lat, lon) -> dict[str, np.ndarray]:
+    """The step's fields at the stations, from the run's mirror, else the other one."""
+    base, layout = loc
     out = {}
-    for p, (off, n) in messages(idx.text).items():
-        r = _get(url, {"Range": f"bytes={off}-{off + n - 1}"})
-        if r is None or len(r.content) != n:
+    for k, b in enumerate((base, *[m for m in MIRRORS if m != base])):
+        tries = FIRST_TRY_RETRIES if k == 0 else RETRIES
+        try:
+            idx = _get(file_url(run, layout, step, "index", b), retries=tries)
+            if idx is None:
+                continue
+            url = file_url(run, layout, step, "grib2", b)
+            for p, (off, n) in messages(idx.text).items():
+                if PARAMS[p] in out:
+                    continue
+                r = _get(url, {"Range": f"bytes={off}-{off + n - 1}"}, retries=tries)
+                if r is None or len(r.content) != n:
+                    continue
+                vals, grid = decode(r.content)
+                out[PARAMS[p]] = vals[cell_index(grid, lat, lon)]
+        except requests.RequestException:
             continue
-        vals, grid = decode(r.content)
-        out[PARAMS[p]] = vals[cell_index(grid, lat, lon)]
+        if len(out) == len(messages(idx.text)):
+            break
     return out
 
 

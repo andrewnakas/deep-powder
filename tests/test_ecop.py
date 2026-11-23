@@ -46,7 +46,7 @@ def test_units_put_northern_winter_first():
 
 def test_harvest_run_spreads_accumulated_precipitation(monkeypatch):
     st = pd.DataFrame({"latitude": [40.0], "longitude": [-111.0]}, index=["a"])
-    monkeypatch.setattr(ecop, "layout_for", lambda r: "ifs/0p25/oper")
+    monkeypatch.setattr(ecop, "layout_for", lambda r: (ecop.BUCKET, "ifs/0p25/oper"))
 
     def step(run, layout, s, lat, lon):  # 0.6 mm per 3 h, t2 0 C, no dew point
         return {"tp": np.array([s * 0.0002], np.float32), "t2": np.array([273.15], np.float32)}
