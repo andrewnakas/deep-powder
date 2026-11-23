@@ -151,6 +151,12 @@ def archive_windows(dly: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
 
+# what summarize writes
+SUMMARY_COLS = ("cons_slr", "mean_slr", "max_slr", "min_slr", "sd_slr", "nsnow", "cons_snow", "max_snow", "sd_snow",
+                "cons_prcp", "cons_swe", "cons_twet", "nmod", "frac_snowy", "q25_slr", "q75_slr")
+PER_MODEL = ("slr__", "snow__", "prcp__", "twet__", "swe__")
+
+
 def summarize(p: pd.DataFrame) -> pd.DataFrame:
     """Cross-model summaries from the per-model columns, in place. Also used
     to rebuild them after a model's columns are blanked."""

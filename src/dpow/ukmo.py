@@ -404,6 +404,24 @@ def windows(hour: int = 12) -> pd.DataFrame:
     return windows_from(sorted(DIR.glob(f"{TAG}__{hour:02d}z__*.parquet")), MODEL)
 
 
+def lapse_delta() -> pd.Series:
+    """Station height minus the model terrain's (m), for moving 2 m temperature."""
+    from . import features
+
+    terr = features.terrain()
+    return terr["elev_delta_14km"] if "elev_delta_14km" in terr else pd.Series(dtype=float)
+
+
+def pivot(win: pd.DataFrame) -> pd.DataFrame:
+    """Long round windows -> one row per (station_id, round_date, horizon_h), `<var>__<model>` columns."""
+    from . import features
+
+    p = win.pivot_table(index=["station_id", "round_date", "horizon_h"], columns="model",
+                        values=list(features.WIN_VARS), aggfunc="first")
+    p.columns = [f"{v}__{m}" for v, m in p.columns]
+    return p.reset_index()
+
+
 def windows_from(files: list, model: str) -> pd.DataFrame:
     """Harvest units in this module's row layout -> `<var>__<model>` round
     windows. One unit at a time (memory), carrying the previous unit's lead-1
@@ -414,17 +432,14 @@ def windows_from(files: list, model: str) -> pd.DataFrame:
     if not files:
         return pd.DataFrame(columns=keys)
     st = stations()
-    terr = features.terrain()
-    delta = terr["elev_delta_14km"] if "elev_delta_14km" in terr else pd.Series(dtype=float)
+    delta = lapse_delta()
     parts, carry = [], None
     for f in sorted(files):
         dly = features.daily(hourly(pd.read_parquet(f), st, delta, model))
         both = dly if carry is None else pd.concat([carry, dly], ignore_index=True)
         win = features.archive_windows(both)
         if len(win):
-            p = win.pivot_table(index=keys, columns="model", values=list(features.WIN_VARS), aggfunc="first")
-            p.columns = [f"{v}__{m}" for v, m in p.columns]
-            parts.append(p.reset_index())
+            parts.append(pivot(win))
         carry = dly[dly["lead"] == 1]
     out = pd.concat(parts, ignore_index=True)
     # a round on the carried run's last day comes out of both units, the same 24 h window

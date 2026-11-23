@@ -220,14 +220,15 @@ def _direct_windows(name: str) -> pd.DataFrame:
     import importlib
 
     ds = name.removesuffix("_dyn") if name.endswith("_dyn") else None
-    mod = importlib.import_module("dpow.dynom" if ds else f"dpow.{name}")
-    asset = f"{mod.TAG}__{ds + '__' if ds else ''}windows__12z.parquet"
+    if ds:
+        from .. import dynom
+
+        return dynom.load_windows(ds)
+    mod = importlib.import_module(f"dpow.{name}")
+    asset = f"{mod.TAG}__windows__12z.parquet"
     store.pull(mod.TAG, mod.DIR, asset, overwrite=True)
     if (mod.DIR / asset).exists():
         w = pd.read_parquet(mod.DIR / asset)
-    elif ds:
-        mod.pull(ds)
-        w = mod.windows(ds)
     else:
         mod.pull()
         w = mod.windows(12)
@@ -282,8 +283,7 @@ def _ukmo(mode: str):
 # ECMWF open data (AWS), dynamical.org GFS/HRRR, the Met Office bucket (ukmo.py), NBM (AWS)
 DIRECT_MODELS = ("ecmwf_ifs025", "gfs_seamless", "ukmo_seamless", "ncep_nbm_conus", "ncep_hrrr_conus")
 # summary columns that features.summarize rebuilds from the per-model columns
-REBUILT = ("cons_slr", "mean_slr", "max_slr", "min_slr", "sd_slr", "nsnow", "cons_snow", "max_snow", "sd_snow",
-           "cons_prcp", "cons_swe", "cons_twet", "nmod", "frac_snowy", "q25_slr", "q75_slr")
+REBUILT = features.SUMMARY_COLS
 
 
 def _only(keep: tuple[str, ...]):
