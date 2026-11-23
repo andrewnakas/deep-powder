@@ -58,7 +58,18 @@ gains (`experiment.yml`).
   and the static columns. −8.02 pooled (45.96 → 37.94), every season down (46.9 → 35.3,
   43.6 → 37.9, 47.4 → 40.6) and every league (alps 50.7 → 40.8, observers 41.8 → 33.4,
   stations 47.7 → 40.6). The block stays; the work is replacing its models with their original
-  sources (the Met Office bucket, `ukmo.py`; ECMWF open data) for every station.
+  sources (the Met Office bucket, `ukmo.py`; ECMWF open data, `ecop.py`) for every station.
+- **Only the models with a free original source** (`only_direct`, 2026-11-23): ECMWF IFS, GFS,
+  UKMO, NBM and HRRR kept; ICON, GEM, JMA and Météo-France blanked, the consensus rebuilt from what
+  is left, and the per-day medians taken over every model blanked. −2.23 pooled (45.3, 40.6, 45.3
+  by season; alps 48.3, observers 39.1, stations 46.1). ECMWF and GFS alone (`only_ecmwf_gfs`):
+  −3.21. So the five direct-source models carry about three quarters of the block's 8 points.
+  The other four have no free archive to train on (DWD, MSC and JMA keep a day or two; the
+  Météo-France bucket is empty), so they can only be recorded from now on.
+- **Coverage:** the block is on only 11–13% of stations rows and 21–26% of observers and alps rows
+  in each season (the featured stations and a sample), and `ecmwf_ifs025` on none before the 2024
+  season. The direct harvests cover every station on every round, so filling the block from them
+  (`ecop_fill`, `direct_fill`) is the next test.
 
 ---
 
