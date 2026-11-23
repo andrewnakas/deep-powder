@@ -154,7 +154,7 @@ def _build(bundle: str):
         df = wndx.join(nbhd.join(df))
         from . import dynom
 
-        for ds in dynom.MODELS:  # Open-Meteo's GFS/HRRR where it gave none (adopted 2026-11-23, METHOD.md)
+        for ds in dynom.FILL:  # Open-Meteo's GFS where it gave none (adopted 2026-11-23, METHOD.md)
             df = dynom.fill(df, {ds: dynom.load_windows(ds)})
     # half the memory: LightGBM bins the features anyway, so float32 loses nothing
     f64 = [c for c in df.select_dtypes("float64").columns if c != "truth_in"]
@@ -585,11 +585,11 @@ def ecop(hour: list[int] = typer.Option([12, 0], "--hour", help="Run hours (UTC)
 
 @app.command("dynom-update")
 def dynom_update(minutes: float = typer.Option(40, help="Time budget")):
-    """This month's and last month's 12Z GFS and HRRR runs at every station
-    from dynamical.org (dynom.py), and the windows file the table fills from."""
+    """This month's and last month's 12Z GFS runs at every station from
+    dynamical.org (dynom.py), and the windows file the table fills from."""
     from . import dynom
 
-    _summary(f"dynom update: {dynom.update(list(dynom.MODELS), minutes)} runs added")
+    _summary(f"dynom update: {dynom.update(list(dynom.FILL), minutes)} runs added")
 
 
 @app.command("direct-windows")

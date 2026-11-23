@@ -233,14 +233,14 @@ def _stack(X: pd.DataFrame, as_league: str, sk: Stack) -> pd.DataFrame:
 
 
 def _dynom_fill(X: pd.DataFrame, r: Round, st: pd.DataFrame, info: dict) -> pd.DataFrame:
-    """GFS and HRRR at every station from dynamical.org into Open-Meteo's
-    columns where the sibling's block has none, as in the training table. A
+    """GFS at every station from dynamical.org into Open-Meteo's columns
+    where the sibling's block has none, as in the training table. A
     failure leaves X as it was (those rows then look like the table's rows
     from before the fill)."""
     from . import dynom
 
     wins = {}
-    for ds in dynom.MODELS:
+    for ds in dynom.FILL:
         if not dynamical.applies(ds, r.league):
             continue
         try:
@@ -292,7 +292,7 @@ def build(r: Round, network: bool = True, budget: float | None = None) -> Result
     except Exception as e:
         info["wndx_error"] = f"{type(e).__name__}: {str(e)[:120]}"
         print(f"  storm-wind features failed: {info['wndx_error']}", flush=True)
-    if used == "nh":  # the nh table has Open-Meteo's GFS/HRRR filled from dynamical.org (dynom.py); so does X
+    if used == "nh":  # the nh table has Open-Meteo's GFS filled from dynamical.org (dynom.py); so does X
         X = _dynom_fill(X, r, reg.loc[ids], info)
 
     t0 = fallback.predict_ens(X)

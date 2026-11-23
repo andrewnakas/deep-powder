@@ -37,7 +37,7 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Hourly-GFS features for the newest rounds
         run: for lg in stations observers alps; do dpow nbhd --league "$lg" --minutes 20 || echo "::warning::nbhd $lg failed"; dpow nbhd --league "$lg" --minutes 20 --source wind || echo "::warning::wndx $lg failed"; done
-      - name: GFS and HRRR at every station (dynamical.org) for the newest rounds
+      - name: GFS at every station (dynamical.org) for the newest rounds
         if: env.BUNDLE == 'nh'
         run: dpow dynom-update --minutes 40 || echo "::warning::dynom update failed"
       - run: dpow table --bundle "$BUNDLE"

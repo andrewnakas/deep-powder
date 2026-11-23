@@ -16,10 +16,11 @@ the `dynom` release. Resumable; `part`/`parts` split the units between jobs.
 `update` keeps this month's and last month's units current every day, and
 `dynom__<ds>__windows__12z.parquet` holds the round windows of every unit.
 
-Adopted 2026-11-23 (`dyn_fill`: +0.44 pooled, every season, league and
-horizon up): `fill` puts these values into Open-Meteo's `gfs_seamless` and
-`ncep_hrrr_conus` columns wherever Open-Meteo gave none, in the training
-table (cli `_build`) and live (`predict.build`, from `round_windows`).
+Adopted 2026-11-23 (`gfs_fill`: +0.46 pooled, every season, league and
+horizon up): `fill` puts GFS into Open-Meteo's `gfs_seamless` columns
+wherever Open-Meteo gave none, in the training table (cli `_build`) and live
+(`predict.build`, from `round_windows`). HRRR (`dyn_fill`, +0.44) added
+nothing on top, so it is harvested but not filled (`FILL`).
 """
 
 from __future__ import annotations
@@ -37,6 +38,8 @@ DIR = WORK / "dynom"
 RUN_HOUR = 12
 MODELS = {"gfs": "gfs_dyn", "hrrr": "hrrr_dyn"}  # dataset -> model name in the columns
 OM_TWIN = {"gfs": "gfs_seamless", "hrrr": "ncep_hrrr_conus"}  # the Open-Meteo model it stands in for
+# filled into the table and live: GFS alone (gfs_fill +0.46; adding HRRR, dyn_fill, +0.44, bought nothing)
+FILL = ("gfs",)
 CM_PER_MM = 0.7  # Open-Meteo's snowfall from water-equivalent precipitation
 KEYS = ["station_id", "round_date", "horizon_h"]
 
