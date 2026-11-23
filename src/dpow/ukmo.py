@@ -360,7 +360,7 @@ MODEL = "ukmo_mo"
 LAPSE_K_PER_M = 0.0065
 
 
-def hourly(raw: pd.DataFrame, st: pd.DataFrame, delta_m: pd.Series) -> pd.DataFrame:
+def hourly(raw: pd.DataFrame, st: pd.DataFrame, delta_m: pd.Series, model: str = MODEL) -> pd.DataFrame:
     """Harvested runs (one run hour) -> `features.daily` input: hourly
     precipitation and 2 m temperature moved to the station's height, in
     station-local time. `lead` = local days after the run's UTC date, so
@@ -389,22 +389,26 @@ def hourly(raw: pd.DataFrame, st: pd.DataFrame, delta_m: pd.Series) -> pd.DataFr
     local = pd.DatetimeIndex(local)
     day = (local - pd.Timedelta(hours=1)).normalize()
     lead = ((day - pd.DatetimeIndex(run).normalize()) // pd.Timedelta(days=1)).astype(np.int16)
-    return pd.DataFrame({"station_id": sid, "model": MODEL, "lead": lead, "time": local,
+    return pd.DataFrame({"station_id": sid, "model": model, "lead": lead, "time": local,
                          "precipitation": P.ravel(), "temperature_2m": T.ravel(), "snowfall": np.nan})
 
 
 def windows(hour: int = 12) -> pd.DataFrame:
     """Per (station_id, round_date, horizon_h): `<var>__ukmo_mo` columns built
     like the Open-Meteo models' (features.daily -> archive_windows)."""
+    return windows_from(sorted(DIR.glob(f"{TAG}__{hour:02d}z__*.parquet")), MODEL)
+
+
+def windows_from(files: list, model: str) -> pd.DataFrame:
+    """Harvest units in this module's row layout -> `<var>__<model>` round windows."""
     from . import features
 
-    files = sorted(DIR.glob(f"{TAG}__{hour:02d}z__*.parquet"))
     if not files:
         return pd.DataFrame(columns=["station_id", "round_date", "horizon_h"])
     st = stations()
     terr = features.terrain()
     delta = terr["elev_delta_14km"] if "elev_delta_14km" in terr else pd.Series(dtype=float)
-    dly = pd.concat([features.daily(hourly(pd.read_parquet(f), st, delta)) for f in files], ignore_index=True)
+    dly = pd.concat([features.daily(hourly(pd.read_parquet(f), st, delta, model)) for f in files], ignore_index=True)
     win = features.archive_windows(dly)
     keys = ["station_id", "round_date", "horizon_h"]
     p = win.pivot_table(index=keys, columns="model", values=list(features.WIN_VARS), aggfunc="first")

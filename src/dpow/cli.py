@@ -559,6 +559,18 @@ def ukmo(hour: list[int] = typer.Option([12, 0], "--hour", help="Run hours (UTC)
 
 
 @app.command()
+def ecop(hour: list[int] = typer.Option([12, 0], "--hour", help="Run hours (UTC) to harvest"),
+         minutes: float = typer.Option(300, help="Stop after this long"),
+         workers: int = typer.Option(12, help="Threads reading forecast steps in parallel")):
+    """Harvest ECMWF IFS HRES at every station straight from ECMWF's open data
+    on AWS (ecop.py), back to 2023-01. Resumable."""
+    from . import ecop as ec
+
+    res = ec.run(minutes, workers, tuple(hour))
+    _summary(f"ecop {','.join(map(str, hour))}Z: {res}")
+
+
+@app.command()
 def ana(league: str = typer.Option(...), source: str = typer.Option(..., help="hrrr or gefs"),
         minutes: int = typer.Option(300, help="Stop starting new winters after this long")):
     """Harvest daily analysis snow at every station of a league (ana.py), one
