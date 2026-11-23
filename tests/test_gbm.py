@@ -95,3 +95,25 @@ def test_snowfall_family_follows_the_override():
     assert "cons_snow" not in gbm.feature_list(df)
     assert {"cons_snow", "snow__x"} <= set(gbm.feature_list(df, snow=True))
     assert "cons_snow" not in gbm.feature_list(df.assign(nsnow=3), snow=False)
+
+
+def test_chained_variants_build_on_each_others_tables():
+    """`_then`: each step gets the table the previous one returned, and a later
+    step's spec keys win (gfs_allst25 = extra stations, then the GFS fill on all rows)."""
+    from dpow.models import experiments
+
+    seen = []
+
+    def add_rows(df):
+        seen.append(len(df))
+        return {"df": pd.concat([df, df.head(2)], ignore_index=True), "snow": False}
+
+    def fill(df):
+        seen.append(len(df))
+        return {"df": df.assign(filled=1.0), "snow": True}
+
+    df = _seasons()
+    out = experiments._then(add_rows, fill)(df)
+    assert seen == [len(df), len(df) + 2]
+    assert len(out["df"]) == len(df) + 2 and out["df"]["filled"].eq(1.0).all() and out["snow"] is True
+    assert {"gfs_ecens_old", "gfs_allst25", "gfs_allst50"} <= set(experiments.VARIANTS)

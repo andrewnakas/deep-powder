@@ -341,6 +341,17 @@ def _allst(frac: float):
     return f
 
 
+def _then(*steps):
+    """Variants applied in turn, each to the table the previous one returned
+    (a later step's spec keys win), e.g. a test on top of an adopted change."""
+    def f(df):
+        out = {}
+        for step in steps:
+            out.update(step(out.get("df", df)))
+        return out
+    return f
+
+
 VARIANTS = {
     "ukmo_add": _ukmo("add"),
     "ukmo_fill": _ukmo("fill"),
@@ -365,6 +376,11 @@ VARIANTS = {
     "ecens_old": _ecens_old,
     "allst25": _allst(0.25),
     "allst50": _allst(0.5),
+    # the same on top of the adopted GFS fill (compare with gfs_fill, 46.42); the extra stations' rows
+    # get GFS from the fill too, as live stations will
+    "gfs_ecens_old": _then(_ecens_old, _direct(("gfs_dyn",), "fill")),
+    "gfs_allst25": _then(_allst(0.25), _direct(("gfs_dyn",), "fill")),
+    "gfs_allst50": _then(_allst(0.5), _direct(("gfs_dyn",), "fill")),
     "hsp": lambda df: {"df": __import__("dpow.hsp", fromlist=["join"]).join(df), "extra": ("hsp_",)},
     # gefx (GEFS 31-member timing): -0.08, mean-only +0.10 on 2026-11-17; removed
     # wndx (storm wind + moisture): +0.52 every fold up, ADOPTED 2026-11-17; flow-only +0.10
