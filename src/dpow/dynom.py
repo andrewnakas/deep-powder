@@ -7,7 +7,9 @@ dynamical.org's Icechunk stores for every grid point, so the 12Z run of each
 day is read at every station and laid out like the Met Office harvest
 (ukmo.py: `pr_001`..`pr_096` hourly precipitation in mm, `t2_00`..`t2_96`
 2 m temperature in C every 3 h), and `ukmo.windows_from` builds the same
-round windows as the Open-Meteo models'.
+round windows as the Open-Meteo models'. Units harvested from 2026-11-23 on
+also carry `sn_001`..`sn_096`, hourly snowfall in cm derived like Open-Meteo's
+NCEP snowfall: precipitation x percent frozen / 100 x 0.7 cm per mm.
 
 A unit = (dataset, month): `dynom__<ds>__12z__<YYYY-MM>.parquet` assets of
 the `dynom` release. Resumable; `part`/`parts` split the units between jobs.
@@ -21,13 +23,14 @@ import numpy as np
 import pandas as pd
 
 from . import WORK, store
-from .ukmo import MAX_LEAD, T_LEADS, columns, stations, windows_from
+from .ukmo import MAX_LEAD, SNOW_COLS, T_LEADS, columns, stations, windows_from
 
 TAG = "dynom"
 DIR = WORK / "dynom"
 RUN_HOUR = 12
 MODELS = {"gfs": "gfs_dyn", "hrrr": "hrrr_dyn"}  # dataset -> model name in the columns
 OM_TWIN = {"gfs": "gfs_seamless", "hrrr": "ncep_hrrr_conus"}  # the Open-Meteo model it stands in for
+CM_PER_MM = 0.7  # Open-Meteo's snowfall from water-equivalent precipitation
 
 
 def unit_name(ds: str, month: pd.Period) -> str:
@@ -47,11 +50,16 @@ def wide(long: pd.DataFrame, run: pd.Timestamp, st: pd.DataFrame) -> pd.DataFram
     i, lead, dt = i[ok].astype(int), lead[ok], dt[ok]
     p = d["p"].to_numpy(np.float32)[ok]
     t = d["t2m"].to_numpy(np.float32)[ok]
+    # GFS/HRRR write percent frozen as -50 where nothing falls
+    fz = np.clip(d["pfz"].to_numpy(np.float32)[ok], 0, 100) / 100 if "pfz" in d else np.full(len(p), np.nan, np.float32)
+    s = p * fz * CM_PER_MM
     P = np.full((n, MAX_LEAD), np.nan, np.float32)
+    S = np.full((n, MAX_LEAD), np.nan, np.float32)
     for k in range(int(dt.max()) if len(dt) else 0):  # hour k before the step's end
         h = lead - k
         m = (k < dt) & (h >= 1) & (h <= MAX_LEAD)
         P[i[m], h[m] - 1] = p[m] / dt[m]
+        S[i[m], h[m] - 1] = np.where(p[m] > 0, s[m], 0.0) / dt[m]
     T = np.full((n, len(T_LEADS)), np.nan, np.float32)
     tl = {h: j for j, h in enumerate(T_LEADS)}
     j = np.array([tl.get(x, -1) for x in lead])
@@ -60,7 +68,8 @@ def wide(long: pd.DataFrame, run: pd.Timestamp, st: pd.DataFrame) -> pd.DataFram
     cols = {f"pr_{h:03d}": P[:, h - 1] for h in range(1, MAX_LEAD + 1)}
     cols |= {f"t2_{h:02d}": T[:, j] for j, h in enumerate(T_LEADS)}
     cols |= {f"td_{h:02d}": np.full(n, np.nan, np.float32) for h in T_LEADS}
-    df = pd.DataFrame({c: np.round(cols[c], 2).astype(np.float32) for c in columns()})
+    cols |= {c: S[:, h] for h, c in enumerate(SNOW_COLS)}
+    df = pd.DataFrame({c: np.round(cols[c], 2).astype(np.float32) for c in (*columns(), *SNOW_COLS)})
     df.insert(0, "run", run)
     df.insert(0, "station_id", st.index.values)
     return df

@@ -71,6 +71,10 @@ def unit_name(hour: int, month: pd.Period) -> str:
     return f"{TAG}__{hour:02d}z__{month}.parquet"
 
 
+# optional hourly snowfall (cm) in the same layout; sources without it leave it out (dynom.py has it)
+SNOW_COLS = tuple(f"sn_{h:03d}" for h in range(1, MAX_LEAD + 1))
+
+
 def columns() -> list[str]:
     cols = [f"pr_{h:03d}" for h in range(1, MAX_LEAD + 1)]
     cols += [f"{v}_{h:02d}" for v in ("t2", "td") for h in T_LEADS]
@@ -370,6 +374,7 @@ def hourly(raw: pd.DataFrame, st: pd.DataFrame, delta_m: pd.Series, model: str =
 
     h = np.arange(1, MAX_LEAD + 1)
     P = raw[[f"pr_{x:03d}" for x in h]].to_numpy(np.float32)
+    S = raw[list(SNOW_COLS)].to_numpy(np.float32).ravel() if SNOW_COLS[0] in raw else np.nan
     T3 = raw[[f"t2_{x:02d}" for x in T_LEADS]].to_numpy(np.float32)
     lo = np.minimum(h // 3, len(T_LEADS) - 2)
     fr = ((h - lo * 3) / 3.0).astype(np.float32)
@@ -390,7 +395,7 @@ def hourly(raw: pd.DataFrame, st: pd.DataFrame, delta_m: pd.Series, model: str =
     day = (local - pd.Timedelta(hours=1)).normalize()
     lead = ((day - pd.DatetimeIndex(run).normalize()) // pd.Timedelta(days=1)).astype(np.int16)
     return pd.DataFrame({"station_id": sid, "model": model, "lead": lead, "time": local,
-                         "precipitation": P.ravel(), "temperature_2m": T.ravel(), "snowfall": np.nan})
+                         "precipitation": P.ravel(), "temperature_2m": T.ravel(), "snowfall": S})
 
 
 def windows(hour: int = 12) -> pd.DataFrame:
