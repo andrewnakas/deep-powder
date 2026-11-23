@@ -157,14 +157,28 @@ OM_PREFIXES = ("slr__", "snow__", "prcp__", "twet__", "swe__", "cons_", "mean_sl
 ARCH_KEYS = ["station_id", "round_date", "horizon_h"]
 
 
+def _blank(d: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """`cols` set to NaN (float32) on a copy-on-write copy: new memory for those columns only."""
+    nan = pd.DataFrame(np.full((len(d), len(cols)), np.nan, np.float32), columns=cols, index=d.index)
+    return pd.concat([d.drop(columns=cols), nan], axis=1)[list(d.columns)]
+
+
+def _attach(d: pd.DataFrame, w: pd.DataFrame) -> pd.DataFrame:
+    """w's columns joined onto d by the round keys, without copying d's own columns."""
+    k = d[ARCH_KEYS].merge(w, on=ARCH_KEYS, how="left")
+    d = d.copy(deep=False)
+    for c in w.columns:
+        if c not in ARCH_KEYS:
+            d[c] = k[c].to_numpy()
+    return d
+
+
 def _no_om(df):
     """No Open-Meteo at all: what the model keeps from dynamical.org, NBM-free
     snowpack and static columns alone."""
     from ..dataset import add_ref
 
-    d = df.copy()
-    om = [c for c in d.columns if c.startswith(OM_PREFIXES)]
-    d[om] = np.nan
+    d = _blank(df, [c for c in df.columns if c.startswith(OM_PREFIXES)])
     add_ref(d)
     return {"df": gbm.add_oof_ratio(d)}
 
@@ -177,7 +191,7 @@ def _ecens_old(df):
 
     leagues = sorted(df["league"].unique())
     arch.pull(leagues, ["ecens"])
-    d = df.copy()
+    d = df.copy(deep=False)
     cols = [c for c in d.columns if c.startswith("ecens_")]
     for lg in leagues:
         e = arch.load(lg, ["ecens"])
@@ -207,10 +221,8 @@ def _ukmo(mode: str):
         w = ukmo.windows(12)
         print(f"  ukmo: {len(w)} round windows, {w['station_id'].nunique() if len(w) else 0} stations", flush=True)
         w = w.astype({c: "float32" for c in w.columns if "__" in c})
-        d = df.copy()
-        if mode == "no_om":
-            d[[c for c in d.columns if c.startswith(OM_PREFIXES)]] = np.nan
-        d = d.merge(w, on=ARCH_KEYS, how="left")
+        d = _blank(df, [c for c in df.columns if c.startswith(OM_PREFIXES)]) if mode == "no_om" else df
+        d = _attach(d, w)
         new = [c for c in w.columns if "__" in c]
         print(f"  ukmo: on {d[new[0]].notna().mean():.0%} of rows", flush=True)
         if mode == "fill":

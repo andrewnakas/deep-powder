@@ -94,7 +94,7 @@ def station_ratio(df: pd.DataFrame) -> dict[str, float]:
 
 
 def add_oof_ratio(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
+    df = df.copy(deep=False)  # copy-on-write (pandas 3): only stn_ratio is new memory
     df["stn_ratio"] = np.nan
     for s in df["season"].unique():
         other = df[df["season"] != s]
