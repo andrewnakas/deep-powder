@@ -372,6 +372,9 @@ def hourly(raw: pd.DataFrame, st: pd.DataFrame, delta_m: pd.Series, model: str =
     previous-runs archive."""
     from .ens_features import station_tz
 
+    # a station dropped from the registry since the unit was harvested has no
+    # time zone (6BE0:CH:SLF, 2026-11): its rows have no round to feed anyway
+    raw = raw[raw["station_id"].isin(st.index)]
     h = np.arange(1, MAX_LEAD + 1)
     P = raw[[f"pr_{x:03d}" for x in h]].to_numpy(np.float32)
     S = raw[list(SNOW_COLS)].to_numpy(np.float32).ravel() if SNOW_COLS[0] in raw else np.nan
