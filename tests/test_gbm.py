@@ -85,3 +85,57 @@ def test_featured_rows_weigh_more_in_training(monkeypatch):
     assert set(w) == {1.0, gbm.FEATURED_WEIGHT} and (w > 1).sum() == df["featured"].sum()
     b = gbm.fit(df)
     assert len(gbm.predict(b, df.drop(columns=["truth_in"]))) == len(df)
+
+
+def test_snowfall_family_follows_the_override():
+    """A row with models but no snowfall (a direct-source fill) must not switch
+    the models' own snowfall off when the variant keeps the base's decision."""
+    df = _seasons().assign(nmod=1, nsnow=0, cons_snow=1.0, snow__x=1.0)
+    assert not gbm.snow_ready(df)
+    assert "cons_snow" not in gbm.feature_list(df)
+    assert {"cons_snow", "snow__x"} <= set(gbm.feature_list(df, snow=True))
+    assert "cons_snow" not in gbm.feature_list(df.assign(nsnow=3), snow=False)
+
+
+def test_chained_variants_build_on_each_others_tables():
+    """`_then`: each step gets the table the previous one returned, and a later
+    step's spec keys win (gfs_allst25 = extra stations, then the GFS fill on all rows)."""
+    from dpow.models import experiments
+
+    seen = []
+
+    def add_rows(df):
+        seen.append(len(df))
+        return {"df": pd.concat([df, df.head(2)], ignore_index=True), "snow": False}
+
+    def fill(df):
+        seen.append(len(df))
+        return {"df": df.assign(filled=1.0), "snow": True}
+
+    df = _seasons()
+    out = experiments._then(add_rows, fill)(df)
+    assert seen == [len(df), len(df) + 2]
+    assert len(out["df"]) == len(df) + 2 and out["df"]["filled"].eq(1.0).all() and out["snow"] is True
+    assert {"gfs_ecens_old", "gfs_allst25", "gfs_allst50"} <= set(experiments.VARIANTS)
+
+
+def test_old_ecmwf_ens_fills_float32_columns_from_float64_units(monkeypatch):
+    """ecens_old: the archive's float64 values go into the table's float32
+    columns only where the table had none (pandas refuses the plain setitem)."""
+    from dpow import arch
+    from dpow.models import experiments
+
+    df = _seasons()
+    df["ecens_snow_q50"] = np.where(np.arange(len(df)) % 2 == 0, np.nan, 5.0).astype("float32")
+    keys = experiments.ARCH_KEYS
+    e = df[keys].copy()
+    e["ecens_snow_q50"] = np.linspace(0.001, 0.9, len(e))  # float64, not exact in float32
+    monkeypatch.setattr(arch, "pull", lambda *a, **k: None)
+    monkeypatch.setattr(arch, "load", lambda lg, ds=None: e)
+    monkeypatch.setattr(gbm, "add_oof_ratio", lambda d: d)
+    out = experiments._ecens_old(df)["df"]
+    assert out["ecens_snow_q50"].dtype == np.float32 and out["ecens_snow_q50"].notna().all()
+    odd = np.arange(len(df)) % 2 == 1
+    assert (out.loc[odd, "ecens_snow_q50"] == 5.0).all()  # existing values kept
+    assert np.allclose(out.loc[~odd, "ecens_snow_q50"], e.loc[~odd, "ecens_snow_q50"], atol=1e-6)
+    assert df["ecens_snow_q50"].isna().sum() == (~odd).sum()  # the base table is untouched

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -152,6 +153,10 @@ def _build(bundle: str):
         from . import nbhd, wndx
 
         df = wndx.join(nbhd.join(df))
+        from . import dynom
+
+        for ds in dynom.FILL:  # Open-Meteo's GFS where it gave none (adopted 2026-11-23, METHOD.md)
+            df = dynom.fill(df, {ds: dynom.load_windows(ds)})
     # half the memory: LightGBM bins the features anyway, so float32 loses nothing
     f64 = [c for c in df.select_dtypes("float64").columns if c != "truth_in"]
     df[f64] = df[f64].astype("float32")
@@ -460,8 +465,6 @@ def nbhd(league: str = typer.Option(...), season: int = typer.Option(0, help="0:
     """Harvest the hourly-GFS neighbourhood and timing features (nbhd.py, or hrrx.py) for
     every round of one league and season in the training table; resumes from
     the `nbhd` release and publishes back to it."""
-    import time
-
     import pandas as pd
 
     from . import gefx, hrrx, hsp, nbmx, store, wndx
@@ -538,11 +541,92 @@ def arch(league: list[str] = typer.Option(["stations", "observers", "alps", "era
          part: int = typer.Option(0, help="This job's share of the missing units (0-based)"),
          parts: int = typer.Option(1, help="Jobs sharing the missing units")):
     """Harvest the every-station archive (arch.py): dynamical.org round features
-    for all stations of each league, ECMWF ENS back to 2020-10. Resumable."""
+    for all stations of each league, ECMWF ENS back to 2020-10. Resumable.
+    `-d gfs_om` / `-d hrrr_om`: the 12Z run at every station in the
+    Open-Meteo model layout instead (dynom.py; leagues ignored). `-d ecop` /
+    `-d ukmo`: the ECMWF HRES / Met Office 12Z harvests (ecop.py, ukmo.py),
+    so they can run here while their own workflow is not on main. Once the
+    `_om` months are complete, part 0 also adds this month's runs and
+    publishes the windows file (`dynom.update`)."""
     from . import arch as ar
 
+    if dataset and set(dataset) <= {"ecop", "ukmo"}:
+        from . import ecop as ec
+        from . import ukmo as uk
+
+        for d in dataset:
+            res = ec.run(minutes, 6, (12,)) if d == "ecop" else uk.run(minutes, 32, (12,))
+            _summary(f"{d} 12Z: {res}")
+        return
+
+    om = [d[:-3] for d in dataset or [] if d.endswith("_om")]  # Open-Meteo-style columns (dynom.py)
+    if om:
+        from . import dynom
+
+        t0 = time.time()
+        res = dynom.run(om, minutes, part=part, parts=parts)
+        if not res["remaining"] and part == 0:  # months complete: this month's runs and the windows file too
+            res["update"] = dynom.update(om, max(5.0, minutes - (time.time() - t0) / 60))
+        _summary(f"dynom {','.join(om)} part {part}/{parts}: {res}")
+        return
     res = ar.run(list(league), list(dataset) if dataset else None, minutes, part=part, parts=parts)
     _summary(f"arch {','.join(league)} {','.join(dataset or ['all'])}: {res}")
+
+
+@app.command()
+def ukmo(hour: list[int] = typer.Option([12, 0], "--hour", help="Run hours (UTC) to harvest"),
+         minutes: float = typer.Option(300, help="Stop after this long"),
+         workers: int = typer.Option(32, help="Processes reading files in parallel")):
+    """Harvest the Met Office global model at every station straight from the
+    Met Office's open-data bucket (ukmo.py), oldest month first: the bucket
+    is a 2-year rolling archive. Resumable."""
+    from . import ukmo as uk
+
+    res = uk.run(minutes, workers, tuple(hour))
+    _summary(f"ukmo {','.join(map(str, hour))}Z: {res}")
+
+
+@app.command()
+def ecop(hour: list[int] = typer.Option([12, 0], "--hour", help="Run hours (UTC) to harvest"),
+         minutes: float = typer.Option(300, help="Stop after this long"),
+         workers: int = typer.Option(6, help="Threads reading forecast steps in parallel (S3 throttles above ~8)")):
+    """Harvest ECMWF IFS HRES at every station straight from ECMWF's open data
+    on AWS (ecop.py), back to 2023-01. Resumable."""
+    from . import ecop as ec
+
+    res = ec.run(minutes, workers, tuple(hour))
+    _summary(f"ecop {','.join(map(str, hour))}Z: {res}")
+
+
+@app.command("dynom-update")
+def dynom_update(minutes: float = typer.Option(40, help="Time budget")):
+    """This month's and last month's 12Z GFS runs at every station from
+    dynamical.org (dynom.py), and the windows file the table fills from."""
+    from . import dynom
+
+    _summary(f"dynom update: {dynom.update(list(dynom.FILL), minutes)} runs added")
+
+
+@app.command("direct-windows")
+def direct_windows(source: str = typer.Argument(..., help="ukmo, ecop, gfs_dyn or hrrr_dyn"),
+                   pull: bool = typer.Option(True, help="Fetch the harvested months from the release first")):
+    """Round windows (`<var>__<model>` per station, round and horizon) from a
+    direct-source harvest, saved as `<tag>__windows__12z.parquet` in its
+    release, so experiments and training read one small file."""
+    import importlib
+
+    from . import store
+
+    ds = source.removesuffix("_dyn") if source.endswith("_dyn") else None
+    mod = importlib.import_module("dpow.dynom" if ds else f"dpow.{source}")
+    if pull:
+        mod.pull(ds) if ds else mod.pull()
+    w = mod.windows(ds) if ds else mod.windows(12)
+    p = mod.DIR / f"{mod.TAG}__{ds + '__' if ds else ''}windows__12z.parquet"
+    w.to_parquet(p, index=False, compression="zstd")
+    store.push(mod.TAG, [p])
+    _summary(f"{source} windows: {len(w)} rows, {w['station_id'].nunique()} stations, "
+             f"{p.stat().st_size / 1e6:.0f} MB")
 
 
 @app.command()

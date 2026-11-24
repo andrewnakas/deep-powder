@@ -94,7 +94,7 @@ def station_ratio(df: pd.DataFrame) -> dict[str, float]:
 
 
 def add_oof_ratio(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
+    df = df.copy(deep=False)  # copy-on-write (pandas 3): only stn_ratio is new memory
     df["stn_ratio"] = np.nan
     for s in df["season"].unique():
         other = df[df["season"] != s]
@@ -121,12 +121,13 @@ def snow_ready(df: pd.DataFrame) -> bool:
     return bool(det.any()) and float((df.loc[det, "nsnow"].fillna(0) > 0).mean()) >= SNOW_MIN_COVER
 
 
-def feature_list(df: pd.DataFrame, extra: tuple[str, ...] = ()) -> list[str]:
-    """`extra`: EXPERIMENTAL prefixes to let in."""
+def feature_list(df: pd.DataFrame, extra: tuple[str, ...] = (), snow: bool | None = None) -> list[str]:
+    """`extra`: EXPERIMENTAL prefixes to let in. `snow`: keep or drop the
+    models' own snowfall regardless of `snow_ready` (None: ask it)."""
     cols = [c for c in df.columns if c not in NON_FEATURES and not c.startswith("_")
             and pd.api.types.is_numeric_dtype(df[c])
             and (not c.startswith(EXPERIMENTAL) or c.startswith(tuple(extra)))]
-    if not snow_ready(df):
+    if not (snow_ready(df) if snow is None else snow):
         cols = [c for c in cols if c not in SNOW_FEATS and not c.startswith("snow__")]
     return [c for c in cols if df[c].notna().any()]
 

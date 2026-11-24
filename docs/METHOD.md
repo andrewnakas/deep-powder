@@ -52,6 +52,68 @@ gains (`experiment.yml`).
   (46.9 → 46.8, 43.6 → 43.3, 47.4 → 47.9); the stations league is unchanged (47.7). Harvest stays
   published (`nbhd` release, prefix `hsp_`).
 
+## How much the Open-Meteo multi-model block is worth
+- **No Open-Meteo at all** (`no_om`, 2026-11-23): every per-model column and every consensus built
+  from them blanked, so what is left is dynamical.org's ensembles and GFS/HRRR/AIFS, the snowpack
+  and the static columns. −8.02 pooled (45.96 → 37.94), every season down (46.9 → 35.3,
+  43.6 → 37.9, 47.4 → 40.6) and every league (alps 50.7 → 40.8, observers 41.8 → 33.4,
+  stations 47.7 → 40.6). The block stays; the work is replacing its models with their original
+  sources (the Met Office bucket, `ukmo.py`; ECMWF open data, `ecop.py`) for every station.
+- **Only the models with a free original source** (`only_direct`, 2026-11-23): ECMWF IFS, GFS,
+  UKMO, NBM and HRRR kept; ICON, GEM, JMA and Météo-France blanked, the consensus rebuilt from what
+  is left, and the per-day medians taken over every model blanked. −2.23 pooled (45.3, 40.6, 45.3
+  by season; alps 48.3, observers 39.1, stations 46.1). ECMWF and GFS alone (`only_ecmwf_gfs`):
+  −3.21. So the five direct-source models carry about three quarters of the block's 8 points.
+  The other four have no free archive to train on (DWD, MSC and JMA keep a day or two; the
+  Météo-France bucket is empty), so they can only be recorded from now on.
+- **Coverage:** the block is on only 11–13% of stations rows and 21–26% of observers and alps rows
+  in each season (the featured stations and a sample), and `ecmwf_ifs025` on none before the 2024
+  season. The direct harvests cover every station on every round, so filling the block from them
+  (`ecop_fill`, `direct_fill`) is the next test.
+
+## GFS at every station (`dynom.py`, adopted 2026-11-23)
+Open-Meteo's `gfs_seamless` columns are filled, where Open-Meteo gave none, with GFS read from
+dynamical.org's archive (from 2021-05): the 12Z run of the day before the round at every
+station's grid point, laid out and windowed exactly like the Open-Meteo models (lead i+1 for
+day i). The cross-model summaries (`cons_slr`, `nmod`, …) and `ref_snow` are rebuilt on the
+filled rows. GFS goes from 13% to 85% of rows.
+- **`gfs_fill`:** +0.46 pooled (45.96 → 46.42), every season up (46.9 → 47.7, 43.6 → 43.9,
+  47.4 → 47.7), every league (alps 50.7 → 51.2, observers 41.8 → 42.2, stations 47.7 → 48.2) and
+  every horizon (24 h 36.9 → 37.5); 6+ in. MAE 4.56 → 4.49. Peak memory 10.0 GB.
+- **HRRR as well** (`dyn_fill`, `ncep_hrrr_conus` from dynamical.org's HRRR archive, 7% → 31% of
+  rows): +0.44, the same as GFS alone, so HRRR is harvested but not filled.
+- **GFS as its own model** (`gfs_add`, `<var>__gfs_dyn` columns beside Open-Meteo's): −0.18. Filling
+  the columns the model already knows is what works.
+- **ECMWF HRES and the Met Office on top of GFS**, filling `ecmwf_ifs025` (from ECMWF's open data,
+  `ecop.py`, 7% → 56% of rows) and `ukmo_seamless` (Met Office open data, `ukmo.py`, 11% → 34%):
+  ECMWF 46.34 and the Met Office 46.31, both below GFS alone (46.42); all three 46.57
+  [47.7, 44.0, 48.0], +0.15 over GFS alone with the 2023 season flat, short of the gate. Both
+  archives are young (ECMWF's open data from 2023-01, the Met Office's from 2024-11), so most
+  training seasons never see them. Harvested, not filled; worth another test once they cover
+  more seasons.
+- **Older ECMWF ensemble on top of GFS** (`gfs_ecens_old`): the ensemble columns filled from the
+  every-station archive for rounds before Open-Meteo's ensemble archive starts (stations 22% → 50%
+  of rows, observers 23% → 43%, alps 29% → 38%): 46.42 [47.5, 43.8, 48.0], exactly GFS alone, with
+  2023 and 2024 down. Not filled.
+- **Training on more stations** (`gfs_allst25`, `gfs_allst50`): rows for stations the table has no
+  features for, trained on but never scored (25%: +378 stations, +804k rows; 50%: +759 stations,
+  +1.6M rows): 46.01 and 45.84, −0.41 and −0.58 against GFS alone, peak memory 15.1 and 15.3 GB.
+  More rows that are mostly empty columns pull the model toward them. The table stays on the
+  featured stations.
+- **The first GFS-only run read −0.41, and it was a broken test.** The direct models have no
+  snowfall field, so with GFS on most rows the snowfall share among rows with a model fell below
+  `gbm.snow_ready`'s 80%, and the whole snowfall family (12 features) was dropped. Experiments that
+  add or fill direct models now keep the base table's snowfall decision.
+- **Snowfall:** derived as precipitation × percent frozen × 0.7 cm/mm, it does not match
+  Open-Meteo's GFS snowfall well enough to fill that column (140 stations, 2025-01-02..12 rounds:
+  total ratio 1.39, correlation 0.69; precipitation itself 0.92 and 0.93). HRRR's follows
+  Open-Meteo's (correlation 0.92) but 28% higher. Snowfall therefore stays out of the fill; it is
+  kept in the units for a separate test.
+- **Live:** `predict.build` reads the round's GFS run at every station and fills the same columns
+  (when the league's cutoff comes before the 12Z run is out, the newest earlier 12Z run, its days
+  shifted). The daily pipeline adds the newest runs to this month's and last month's units and
+  rebuilds the windows file (`dpow dynom-update`), so recent training rounds are filled too.
+
 ---
 
 # Inherited from open-powder-ensemble

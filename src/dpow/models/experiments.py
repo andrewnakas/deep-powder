@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .. import features
+from .. import features, store
 from . import gbm
 
 ADOPT_GAIN = 0.3  # pooled-mean gain needed, with every fold up
@@ -157,14 +157,28 @@ OM_PREFIXES = ("slr__", "snow__", "prcp__", "twet__", "swe__", "cons_", "mean_sl
 ARCH_KEYS = ["station_id", "round_date", "horizon_h"]
 
 
+def _blank(d: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """`cols` set to NaN (float32) on a copy-on-write copy: new memory for those columns only."""
+    nan = pd.DataFrame(np.full((len(d), len(cols)), np.nan, np.float32), columns=cols, index=d.index)
+    return pd.concat([d.drop(columns=cols), nan], axis=1)[list(d.columns)]
+
+
+def _attach(d: pd.DataFrame, w: pd.DataFrame) -> pd.DataFrame:
+    """w's columns joined onto d by the round keys, without copying d's own columns."""
+    k = d[ARCH_KEYS].merge(w, on=ARCH_KEYS, how="left")
+    d = d.copy(deep=False)
+    for c in w.columns:
+        if c not in ARCH_KEYS:
+            d[c] = k[c].to_numpy()
+    return d
+
+
 def _no_om(df):
     """No Open-Meteo at all: what the model keeps from dynamical.org, NBM-free
     snowpack and static columns alone."""
     from ..dataset import add_ref
 
-    d = df.copy()
-    om = [c for c in d.columns if c.startswith(OM_PREFIXES)]
-    d[om] = np.nan
+    d = _blank(df, [c for c in df.columns if c.startswith(OM_PREFIXES)])
     add_ref(d)
     return {"df": gbm.add_oof_ratio(d)}
 
@@ -177,7 +191,7 @@ def _ecens_old(df):
 
     leagues = sorted(df["league"].unique())
     arch.pull(leagues, ["ecens"])
-    d = df.copy()
+    d = df.copy(deep=False)
     cols = [c for c in d.columns if c.startswith("ecens_")]
     for lg in leagues:
         e = arch.load(lg, ["ecens"])
@@ -188,11 +202,107 @@ def _ecens_old(df):
         before = d.loc[m, "ecens_snow_q50"].notna().mean()
         for c in cols:
             if c in got:
-                d.loc[m, c] = d.loc[m, c].fillna(pd.Series(got[c].to_numpy(), index=d.index[m]))
+                # in the table's own dtype: pandas refuses float64 values into a float32 column
+                col = d[c].to_numpy(dtype="float32" if d[c].dtype.kind != "f" else None, copy=True)
+                new = got[c].to_numpy(dtype=col.dtype, na_value=np.nan)
+                col[m] = np.where(np.isnan(col[m]), new, col[m])
+                d[c] = col
         print(f"  ecens_old {lg}: ECMWF ENS on {before:.0%} -> {d.loc[m, 'ecens_snow_q50'].notna().mean():.0%} "
               f"of rows", flush=True)
     add_ref(d)
     return {"df": gbm.add_oof_ratio(d)}
+
+
+# harvested straight from the producer's open data: module -> the Open-Meteo model it stands in for
+DIRECT_SOURCES = {"ukmo": "ukmo_seamless", "ecop": "ecmwf_ifs025",
+                  "gfs_dyn": "gfs_seamless", "hrrr_dyn": "ncep_hrrr_conus"}  # dynom.py
+
+
+def _direct_windows(name: str) -> pd.DataFrame:
+    """The module's round windows: the precomputed asset when there is one
+    (`<tag>__windows__12z.parquet`, built by `dpow direct-windows`), else built here."""
+    import importlib
+
+    ds = name.removesuffix("_dyn") if name.endswith("_dyn") else None
+    if ds:
+        from .. import dynom
+
+        return dynom.load_windows(ds)
+    mod = importlib.import_module(f"dpow.{name}")
+    asset = f"{mod.TAG}__windows__12z.parquet"
+    store.pull(mod.TAG, mod.DIR, asset, overwrite=True)
+    if (mod.DIR / asset).exists():
+        w = pd.read_parquet(mod.DIR / asset)
+    else:
+        mod.pull()
+        w = mod.windows(12)
+    w["round_date"] = pd.to_datetime(w["round_date"]).dt.date
+    return w.astype({c: "float32" for c in w.columns if "__" in c})
+
+
+def _direct(names: tuple[str, ...], mode: str):
+    """Models read straight from their producers' open data (ukmo.py, ecop.py)
+    for every station: `add` = their own model columns; `fill` = into the
+    Open-Meteo model's columns where Open-Meteo gave none, consensus rebuilt;
+    `no_om` = instead of every Open-Meteo column.
+
+    The direct models have no snowfall field, so with `add`/`fill` most rows
+    gain a model but no snowfall, and `gbm.snow_ready` would read that as an
+    unfinished snowfall harvest and drop the whole snowfall family (12
+    features: gfs_fill on 2026-11-23 lost them). Those variants keep the
+    base table's decision."""
+    def f(df):
+        ready = gbm.snow_ready(df)
+        d = _blank(df, [c for c in df.columns if c.startswith(OM_PREFIXES)]) if mode == "no_om" else df
+        for name in names:
+            w = _direct_windows(name)
+            print(f"  {name}: {len(w)} round windows, {w['station_id'].nunique() if len(w) else 0} stations",
+                  flush=True)
+            new = [c for c in w.columns if "__" in c]
+            d = _attach(d, w)
+            print(f"  {name}: on {d[new[0]].notna().mean():.0%} of rows", flush=True)
+            if mode == "fill":
+                om = DIRECT_SOURCES[name]
+                for c in new:
+                    old = c.rsplit("__", 1)[0] + "__" + om
+                    if old in d:
+                        before = d[old].notna().mean()
+                        d[old] = d[old].fillna(d[c])
+                        if c == new[0]:
+                            print(f"  {old}: {before:.0%} -> {d[old].notna().mean():.0%} of rows", flush=True)
+                d = d.drop(columns=new)
+        if mode == "fill":
+            d = _resummarize(d)
+        elif mode == "no_om":  # the consensus columns now come from the direct models alone
+            d = gbm.add_oof_ratio(_resummarize(d))
+        return {"df": d} if mode == "no_om" else {"df": d, "snow": ready}
+    return f
+
+
+def _ukmo(mode: str):
+    return _direct(("ukmo",), mode)
+
+
+# Open-Meteo models that also exist at the original source, free, with an archive:
+# ECMWF open data (AWS), dynamical.org GFS/HRRR, the Met Office bucket (ukmo.py), NBM (AWS)
+DIRECT_MODELS = ("ecmwf_ifs025", "gfs_seamless", "ukmo_seamless", "ncep_nbm_conus", "ncep_hrrr_conus")
+# summary columns that features.summarize rebuilds from the per-model columns
+REBUILT = features.SUMMARY_COLS
+
+
+def _only(keep: tuple[str, ...]):
+    """Open-Meteo's block with only the `keep` models: the others blanked, the
+    consensus rebuilt from what is left, and the per-day/next/prev medians
+    (which summarize cannot rebuild and were taken over every model) blanked."""
+    def f(df):
+        models = sorted({c.split("__", 1)[1] for c in df.columns if c.startswith("slr__")})
+        gone = [m for m in models if m not in keep]
+        cols = [c for m in gone for c in _model_cols(df, m)]
+        cols += [c for c in df.columns if (c.startswith("cons_") and c not in REBUILT)
+                 or c.startswith(("sd_slr_d", "max_slr_d"))]
+        print(f"  only {keep}: blanking {gone} and {len(cols)} columns", flush=True)
+        return {"df": gbm.add_oof_ratio(_resummarize(_blank(df, cols)))}
+    return f
 
 
 def _allst(frac: float):
@@ -235,11 +345,46 @@ def _allst(frac: float):
     return f
 
 
+def _then(*steps):
+    """Variants applied in turn, each to the table the previous one returned
+    (a later step's spec keys win), e.g. a test on top of an adopted change."""
+    def f(df):
+        out = {}
+        for step in steps:
+            out.update(step(out.get("df", df)))
+        return out
+    return f
+
+
 VARIANTS = {
+    "ukmo_add": _ukmo("add"),
+    "ukmo_fill": _ukmo("fill"),
+    "no_om_ukmo": _ukmo("no_om"),
+    "ecop_add": _direct(("ecop",), "add"),
+    "ecop_fill": _direct(("ecop",), "fill"),
+    "direct_fill": _direct(("ecop", "ukmo"), "fill"),
+    "no_om_direct": _direct(("ecop", "ukmo"), "no_om"),
+    "gfs_fill": _direct(("gfs_dyn",), "fill"),
+    "hrrr_fill": _direct(("hrrr_dyn",), "fill"),
+    "dyn_fill": _direct(("gfs_dyn", "hrrr_dyn"), "fill"),
+    "gfs_add": _direct(("gfs_dyn",), "add"),
+    # on top of the adopted GFS fill (gfs_fill +0.46): the ECMWF HRES and Met Office harvests
+    "gfs_ecop_fill": _direct(("gfs_dyn", "ecop"), "fill"),
+    "gfs_ukmo_fill": _direct(("gfs_dyn", "ukmo"), "fill"),
+    "gfs_ecop_ukmo_fill": _direct(("gfs_dyn", "ecop", "ukmo"), "fill"),
+    "direct_fill_all": _direct(("ecop", "ukmo", "gfs_dyn", "hrrr_dyn"), "fill"),
+    "no_om_direct_all": _direct(("ecop", "ukmo", "gfs_dyn", "hrrr_dyn"), "no_om"),
     "no_om": _no_om,
+    "only_direct": _only(DIRECT_MODELS),
+    "only_ecmwf_gfs": _only(("ecmwf_ifs025", "gfs_seamless")),
     "ecens_old": _ecens_old,
     "allst25": _allst(0.25),
     "allst50": _allst(0.5),
+    # the same on top of the adopted GFS fill (compare with gfs_fill, 46.42); the extra stations' rows
+    # get GFS from the fill too, as live stations will
+    "gfs_ecens_old": _then(_ecens_old, _direct(("gfs_dyn",), "fill")),
+    "gfs_allst25": _then(_allst(0.25), _direct(("gfs_dyn",), "fill")),
+    "gfs_allst50": _then(_allst(0.5), _direct(("gfs_dyn",), "fill")),
     "hsp": lambda df: {"df": __import__("dpow.hsp", fromlist=["join"]).join(df), "extra": ("hsp_",)},
     # gefx (GEFS 31-member timing): -0.08, mean-only +0.10 on 2026-11-17; removed
     # wndx (storm wind + moisture): +0.52 every fold up, ADOPTED 2026-11-17; flow-only +0.10
@@ -307,7 +452,7 @@ def breakdown(oof: pd.DataFrame) -> dict:
 def evaluate(df: pd.DataFrame, name: str, params: dict, folds: list) -> dict:
     spec = VARIANTS[name](df) if name != "base" else {}
     d = spec.get("df", df)
-    feats = [f for f in gbm.feature_list(d, spec.get("extra", ()))
+    feats = [f for f in gbm.feature_list(d, spec.get("extra", ()), snow=spec.get("snow"))
              if not any(x in f for x in spec.get("drop", ()))]
     oof: list = []
     r = gbm.cross_validate(d, feats, {**params, **spec.get("params", {})}, folds, weight=spec.get("weight"),
