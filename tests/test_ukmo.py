@@ -49,6 +49,16 @@ def test_hourly_puts_local_days_on_the_previous_runs_leads():
     assert abs(h.iloc[0]["temperature_2m"] - (1.0 - 0.65)) < 1e-4
 
 
+def test_hourly_drops_stations_no_longer_registered():
+    st = pd.DataFrame({"latitude": [40.6], "longitude": [-111.6], "elevation_ft": [8000.0]},
+                      index=pd.Index(["a"], name="station_id"))
+    row = {"station_id": "a", "run": pd.Timestamp("2025-12-01 12:00")}
+    row |= {f"pr_{h:03d}": 1.0 for h in range(1, ukmo.MAX_LEAD + 1)}
+    row |= {f"t2_{h:02d}": 0.0 for h in ukmo.T_LEADS} | {f"td_{h:02d}": 0.0 for h in ukmo.T_LEADS}
+    gone = row | {"station_id": "6BE0:CH:SLF"}  # harvested, then dropped from the registry
+    h = ukmo.hourly(pd.DataFrame([row, gone]), st, pd.Series({"a": 0.0}))
+    assert len(h) == ukmo.MAX_LEAD and set(h["station_id"]) == {"a"}
+
 def test_windows_from_one_unit_at_a_time_matches_all_at_once(tmp_path, monkeypatch):
     from dpow import features, ukmo
 
