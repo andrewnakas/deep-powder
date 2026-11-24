@@ -1,16 +1,16 @@
-_Updated 2026-11-23 01:59 UTC from PowderBench leaderboards._
+_Updated 2026-11-24 05:32 UTC from PowderBench leaderboards._
 
-### alps — **#None** of 16 (Powder Accuracy 47.3, 2 rounds, not yet ranked)
+### alps — **#None** of 16 (Powder Accuracy 51.4, 3 rounds, not yet ranked)
 
 | # | team | Powder Accuracy | MAE | pinball | Brier₆ | rounds |
 |---|---|---|---|---|---|---|
-| 1 | baseline-ukmo | 15.7 | 0.69 | – | – | 8 |
-| 2 | baseline-consensus | 12.9 | 0.61 | – | – | 8 |
-| 3 | baseline-openmeteo | 11.6 | 0.54 | – | – | 8 |
-| 4 | baseline-icon | 10.4 | 0.55 | – | – | 8 |
-| 5 | house-blend | 6.5 | 0.60 | 0.268 | 0.000 | 8 |
-| 6 | baseline-arome | 4.1 | 0.72 | – | – | 8 |
-| None | **deep-powder** | 47.3 | 1.71 | 0.587 | 0.003 | 2 |
+| 1 | baseline-ukmo | 18.0 | 0.98 | – | – | 9 |
+| 2 | baseline-consensus | 16.2 | 0.87 | – | – | 9 |
+| 3 | baseline-openmeteo | 15.7 | 0.78 | – | – | 9 |
+| 4 | baseline-icon | 14.4 | 0.80 | – | – | 9 |
+| 5 | house-blend | 10.7 | 0.86 | 0.382 | 0.018 | 9 |
+| 6 | baseline-arome | 6.4 | 1.07 | – | – | 9 |
+| None | **deep-powder** | 51.4 | 1.84 | 0.641 | 0.024 | 3 |
 
 ### era5 — not entered yet
 
@@ -23,16 +23,17 @@ _Updated 2026-11-23 01:59 UTC from PowderBench leaderboards._
 | 5 | baseline-ecmwf | 0.6 | 0.13 | – | – | 9 |
 | 6 | baseline-climatology | 0.0 | 0.92 | 0.362 | 0.029 | 114 |
 
-### observers — not entered yet
+### observers — **#None** of 20 (Powder Accuracy 100.0, 1 rounds, not yet ranked)
 
 | # | team | Powder Accuracy | MAE | pinball | Brier₆ | rounds |
 |---|---|---|---|---|---|---|
-| 1 | open-powder-ensemble | 32.1 | 0.20 | 0.075 | 0.003 | 21 |
-| 2 | baseline-consensus | 26.8 | 0.17 | – | – | 25 |
-| 3 | baseline-icon | 21.6 | 0.20 | – | – | 25 |
-| 4 | baseline-ukmo | 20.8 | 0.16 | – | – | 25 |
-| 5 | baseline-zeros | 19.7 | 0.23 | 0.113 | 0.002 | 26 |
-| 6 | house-blend | 8.8 | 0.24 | 0.114 | 0.003 | 23 |
+| 1 | open-powder-ensemble | 35.2 | 0.19 | 0.072 | 0.002 | 22 |
+| 2 | baseline-consensus | 29.5 | 0.16 | – | – | 26 |
+| 3 | baseline-icon | 24.6 | 0.19 | – | – | 26 |
+| 4 | baseline-ukmo | 23.8 | 0.15 | – | – | 26 |
+| 5 | baseline-zeros | 22.7 | 0.22 | 0.109 | 0.002 | 27 |
+| 6 | house-blend | 12.5 | 0.23 | 0.111 | 0.003 | 24 |
+| None | **deep-powder** | 100.0 | 0.00 | 0.007 | 0.000 | 1 |
 
 ### resorts — not entered yet
 
@@ -45,7 +46,7 @@ _Updated 2026-11-23 01:59 UTC from PowderBench leaderboards._
 | 5 | baseline-gfs | -82.2 | 3.65 | – | – | 111 |
 | 6 | baseline-persistence | -113.5 | 4.00 | – | – | 111 |
 
-### resorts-na — **#None** of 18 (Powder Accuracy 29.5, 2 rounds, not yet ranked)
+### resorts-na — **#None** of 18 (Powder Accuracy 38.1, 3 rounds, not yet ranked)
 
 | # | team | Powder Accuracy | MAE | pinball | Brier₆ | rounds |
 |---|---|---|---|---|---|---|
@@ -55,9 +56,9 @@ _Updated 2026-11-23 01:59 UTC from PowderBench leaderboards._
 | 4 | baseline-aifs | 17.9 | 1.54 | – | – | 14 |
 | 5 | baseline-zeros | 16.5 | 1.74 | 0.870 | 0.059 | 15 |
 | 6 | baseline-consensus | 15.0 | 1.50 | – | – | 14 |
-| None | **deep-powder** | 29.5 | 3.22 | 1.330 | 0.113 | 2 |
+| None | **deep-powder** | 38.1 | 2.47 | 1.013 | 0.090 | 3 |
 
-### stations — **#None** of 19 (Powder Accuracy 62.6, 3 rounds, not yet ranked)
+### stations — **#None** of 19 (Powder Accuracy 58.3, 4 rounds, not yet ranked)
 
 | # | team | Powder Accuracy | MAE | pinball | Brier₆ | rounds |
 |---|---|---|---|---|---|---|
@@ -67,4 +68,4 @@ _Updated 2026-11-23 01:59 UTC from PowderBench leaderboards._
 | 4 | house-blend | 38.0 | 0.83 | 0.378 | 0.025 | 25 |
 | 5 | baseline-wpc | 37.3 | 0.78 | 0.310 | 0.015 | 22 |
 | 6 | baseline-ecmwf | 33.4 | 0.91 | – | – | 15 |
-| None | **deep-powder** | 62.6 | 1.71 | 0.588 | 0.047 | 3 |
+| None | **deep-powder** | 58.3 | 1.53 | 0.531 | 0.048 | 4 |
