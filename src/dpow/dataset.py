@@ -72,7 +72,10 @@ def training_table(league: str) -> pd.DataFrame:
     if league == "era5":
         tw = truth.windows(truth.era5_daily(stations(league), min(X["round_date"]), max(X["round_date"])))
     elif league in HF_LEAGUES:
-        tw = truth.windows(truth.hf_daily(league, begin=min(X["round_date"])))
+        daily = truth.hf_daily(league, begin=min(X["round_date"]))
+        if daily.empty:  # truth not exported yet
+            return pd.DataFrame()
+        tw = truth.windows(daily)
     else:  # resort leagues: PowderBench's own resolved rounds are the archive
         tw = truth.resolved_rounds(league)
     df = X.merge(tw, on=KEYS, how="inner")
