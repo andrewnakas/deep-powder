@@ -345,6 +345,34 @@ def _allst(frac: float):
     return f
 
 
+def _newlg(aug: int):
+    """The NEW_LEAGUES rows of the table release (every station, from arch.py)
+    added to the base. aug=1: trained on, never scored, so the score is the
+    base leagues' (does training on them help or hurt there?). aug=0: scored
+    too, so the breakdown gives each new league's own season-CV accuracy."""
+    def f(df):
+        from .. import NEW_LEAGUES, store
+
+        bundle = "nh"
+        store.pull("table", store.TABLE, f"{bundle}__*.parquet")
+        files = [p for p in sorted(store.TABLE.glob(f"{bundle}__*.parquet")) if p.stem.split("__")[1] in NEW_LEAGUES]
+        if not files:
+            print("  newlg: no new-league rows in the table release", flush=True)
+            return {}
+        extra = pd.concat([pd.read_parquet(p) for p in files], ignore_index=True)
+        extra["round_date"] = pd.to_datetime(extra["round_date"]).dt.date
+        extra = gbm.add_oof_ratio(extra)  # their own station ratios, out of season like the base's
+        extra = extra[[c for c in df.columns if c in extra]]
+        f64 = [c for c in extra.select_dtypes("float64").columns if c != "truth_in"]
+        extra[f64] = extra[f64].astype("float32")
+        for lg, g in extra.groupby("league"):
+            print(f"  newlg {lg}: {g['station_id'].nunique()} stations, {len(g)} rows, seasons "
+                  f"{sorted(g['season'].unique().tolist())}", flush=True)
+        base = df.assign(aug=df["aug"] if "aug" in df else 0)
+        return {"df": pd.concat([base, extra.assign(aug=aug)], ignore_index=True)}
+    return f
+
+
 def _then(*steps):
     """Variants applied in turn, each to the table the previous one returned
     (a later step's spec keys win), e.g. a test on top of an adopted change."""
@@ -378,6 +406,8 @@ VARIANTS = {
     "only_direct": _only(DIRECT_MODELS),
     "only_ecmwf_gfs": _only(("ecmwf_ifs025", "gfs_seamless")),
     "ecens_old": _ecens_old,
+    "newlg": _newlg(0),
+    "newlg_aug": _newlg(1),
     "allst25": _allst(0.25),
     "allst50": _allst(0.5),
     # the same on top of the adopted GFS fill (compare with gfs_fill, 46.42); the extra stations' rows
@@ -437,9 +467,14 @@ def _pa(d: pd.DataFrame) -> float | None:
 
 def breakdown(oof: pd.DataFrame) -> dict:
     """Pooled Powder Accuracy by league and horizon; 24 h MAE by truth amount."""
+    from .. import NEW_LEAGUES
+
     out = {}
     if "league" in oof:
         out.update({f"{lg}": _pa(g) for lg, g in oof.groupby("league")})
+        for lg, g in oof.groupby("league"):  # a new league next to the raw ensemble consensus on its rows
+            if lg in NEW_LEAGUES and gbm.REF in g:
+                out[f"{lg} raw"] = _pa(g.assign(pred=g[gbm.REF]).dropna(subset=["pred"]))
     out.update({f"{int(h)}h": _pa(g) for h, g in oof.groupby("horizon_h")})
     d = oof[oof["horizon_h"] == 24]
     err = (d["pred"] - d["truth_in"]).abs()

@@ -39,6 +39,8 @@ def hf_daily(league: str, begin: date | None = None) -> pd.DataFrame:
             continue
         p = hf_hub_download(HF_REPO, f, repo_type="dataset", cache_dir=str(WORK / "hf"))
         frames.append(pd.read_parquet(p))
+    if not frames:  # a league not exported yet: no rows (its table is empty, the pipeline goes on)
+        return pd.DataFrame(columns=["station_id", "date", "snow24", "valid"])
     df = pd.concat(frames, ignore_index=True)
     df["date"] = pd.to_datetime(df["date"]).dt.date
     df = df.rename(columns={"snow24_in": "snow24"})

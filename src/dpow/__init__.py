@@ -22,6 +22,17 @@ POWDER_IN = 6.0
 # flavour of the NH model and learns per-resort bias online, until enough of
 # its own resolved rounds exist for a `resorts-na` bundle.
 NH_LEAGUES = ("stations", "observers", "alps")
+# Leagues added to the NH training table (every-station archive features from
+# arch.py, truth from the Hugging Face export) but not yet submitted to, nor
+# trained on by the published model: experiments `newlg`/`newlg_aug` decide.
+NEW_LEAGUES = ("japan", "nordic", "world")
+# the `league_code` feature: the NH leagues keep the codes they always had,
+# every other league shares 3 (as before), the new ones follow
+LEAGUE_CODES = {"stations": 0, "observers": 1, "alps": 2, "japan": 4, "nordic": 5, "world": 6}
+
+
+def league_code(league: str) -> int:
+    return LEAGUE_CODES.get(league, 3)
 OWN_BUNDLE_LEAGUES = ("era5", "resorts", "resorts-na")
 PROXY_LEAGUE = {"resorts-na": "observers"}
 
