@@ -91,6 +91,15 @@ filled rows. GFS goes from 13% to 85% of rows.
   archives are young (ECMWF's open data from 2023-01, the Met Office's from 2024-11), so most
   training seasons never see them. Harvested, not filled; worth another test once they cover
   more seasons.
+- **Older ECMWF ensemble on top of GFS** (`gfs_ecens_old`): the ensemble columns filled from the
+  every-station archive for rounds before Open-Meteo's ensemble archive starts (stations 22% → 50%
+  of rows, observers 23% → 43%, alps 29% → 38%): 46.42 [47.5, 43.8, 48.0], exactly GFS alone, with
+  2023 and 2024 down. Not filled.
+- **Training on more stations** (`gfs_allst25`, `gfs_allst50`): rows for stations the table has no
+  features for, trained on but never scored (25%: +378 stations, +804k rows; 50%: +759 stations,
+  +1.6M rows): 46.01 and 45.84, −0.41 and −0.58 against GFS alone, peak memory 15.1 and 15.3 GB.
+  More rows that are mostly empty columns pull the model toward them. The table stays on the
+  featured stations.
 - **The first GFS-only run read −0.41, and it was a broken test.** The direct models have no
   snowfall field, so with GFS on most rows the snowfall share among rows with a model fell below
   `gbm.snow_ready`'s 80%, and the whole snowfall family (12 features) was dropped. Experiments that
