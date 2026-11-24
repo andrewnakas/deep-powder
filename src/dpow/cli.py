@@ -137,13 +137,15 @@ def _build(bundle: str):
     """The training table of a bundle, built from the sibling entries' stores."""
     import pandas as pd
 
-    from . import NH_LEAGUES, store
+    from . import NEW_LEAGUES, NH_LEAGUES, store
     from .dataset import training_table
     from .ens_store import ENS_STORE
 
     store.pull_ens(ENS_STORE)
     store.pull("store", store.STORE, repo=store.DET_REPO)  # deterministic archive features (public)
-    leagues = NH_LEAGUES if bundle == "nh" else (bundle,)
+    # the new leagues are built into the table (nbhd/wndx harvest its rounds, experiments
+    # read them) but _table leaves them out of training until they are adopted
+    leagues = NH_LEAGUES + NEW_LEAGUES if bundle == "nh" else (bundle,)
     tables = [t for t in (training_table(lg) for lg in leagues) if len(t)]
     if not tables:
         return None
@@ -165,19 +167,23 @@ def _build(bundle: str):
 
 def _table(bundle: str, columns: list[str] | None = None, rebuild: bool = False):
     """The table from the `table` release (one parquet per league and season),
-    or built on the spot when the release has none for this bundle."""
+    or built on the spot when the release has none for this bundle. Rows of
+    NEW_LEAGUES are left out: experiments add them (newlg, newlg_aug)."""
     import pandas as pd
 
-    from . import store
+    from . import NEW_LEAGUES, store
 
     if not rebuild:
         store.pull("table", store.TABLE, f"{bundle}__*.parquet")
-        files = sorted(store.TABLE.glob(f"{bundle}__*.parquet"))
+        files = sorted(f for f in store.TABLE.glob(f"{bundle}__*.parquet")
+                       if f.stem.split("__")[1] not in NEW_LEAGUES)
         if files:
             df = pd.concat([pd.read_parquet(f, columns=columns) for f in files], ignore_index=True)
             df["round_date"] = pd.to_datetime(df["round_date"]).dt.date
             return df
     df = _build(bundle)
+    if df is not None:
+        df = df[~df["league"].isin(NEW_LEAGUES)].reset_index(drop=True)
     return df if df is None or columns is None else df[[c for c in columns if c in df]]
 
 

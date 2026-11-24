@@ -138,3 +138,23 @@ def test_single_days_and_spread_exist_live_and_in_the_archive():
         assert r.loc[24, "cons_slr_next"] == pytest.approx(r.loc[48, "cons_slr_d1"]) and "cons_prcp_next" in r
 
 
+
+
+def test_league_codes_keep_the_old_values():
+    from dpow import NEW_LEAGUES, NH_LEAGUES, league_code
+
+    # the published models were trained on stations 0, observers 1, alps 2, everything else 3
+    assert [league_code(lg) for lg in NH_LEAGUES] == [0, 1, 2]
+    assert league_code("era5") == league_code("resorts") == 3
+    assert len({league_code(lg) for lg in NEW_LEAGUES} | {0, 1, 2, 3}) == 4 + len(NEW_LEAGUES)
+
+
+def test_training_table_leaves_the_new_leagues_out(monkeypatch, tmp_path):
+    from dpow import cli, store
+
+    monkeypatch.setattr(store, "TABLE", tmp_path)
+    monkeypatch.setattr(store, "pull", lambda *a, **k: None)
+    for lg in ("stations", "alps", "japan", "nordic"):
+        pd.DataFrame({"station_id": ["A"], "round_date": ["2025-01-02"], "horizon_h": [24], "league": [lg],
+                      "season": [2024], "truth_in": [1.0]}).to_parquet(tmp_path / f"nh__{lg}__2024.parquet")
+    assert sorted(cli._table("nh")["league"]) == ["alps", "stations"]

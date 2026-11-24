@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import HORIZONS, NH_LEAGUES, OWN_BUNDLE_LEAGUES, PROXY_LEAGUE, QCOLS, ROOT
+from . import HORIZONS, NH_LEAGUES, OWN_BUNDLE_LEAGUES, PROXY_LEAGUE, QCOLS, ROOT, league_code
 from .contract import Round, stations
 from .dataset import KEYS, assemble
 from .ens_features import features_for_init, init_for_round
@@ -196,7 +196,7 @@ def _with_density(pred: pd.DataFrame, X: pd.DataFrame) -> pd.DataFrame:
 
 def _tier1(X: pd.DataFrame, as_league: str, bundle: gbm.Bundle) -> pd.DataFrame:
     Xb = X.copy()
-    Xb["league_code"] = NH_LEAGUES.index(as_league) if as_league in NH_LEAGUES else len(NH_LEAGUES)
+    Xb["league_code"] = league_code(as_league)
     t1 = gbm.predict(bundle, Xb)
     t1["tier"] = "t1"
     has_ens = X.filter(like="_snow_q50").notna().any(axis=1).to_numpy()
@@ -217,7 +217,7 @@ def _tier1(X: pd.DataFrame, as_league: str, bundle: gbm.Bundle) -> pd.DataFrame:
 
 def _stack(X: pd.DataFrame, as_league: str, sk: Stack) -> pd.DataFrame:
     Xb = X.copy()
-    Xb["league_code"] = NH_LEAGUES.index(as_league) if as_league in NH_LEAGUES else len(NH_LEAGUES)
+    Xb["league_code"] = league_code(as_league)
     cols: dict = {}
     for fm in sk.finals:
         cols.update(fm.predict(Xb))

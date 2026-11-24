@@ -213,7 +213,7 @@ def cross_validate(df: pd.DataFrame, feats: list[str], params: dict, folds: list
         del ds, dv
         pred = np.clip(pred + b_va, 0, None)
         if oof is not None:
-            keep = [c for c in (*KEYS, "league", "truth_in", "climo_p50") if c in va]
+            keep = [c for c in (*KEYS, "league", "truth_in", "climo_p50", REF) if c in va]
             oof.append(va[keep].assign(pred=pred, fold=str(s)))
         scores.append(_ps(pred, va))
         vr = va.dropna(subset=[REF]) if REF in va else va.iloc[:0]

@@ -236,7 +236,7 @@ _TERRAIN = None
 
 def add_static(df: pd.DataFrame, st: pd.DataFrame, clim: pd.DataFrame, league: str) -> pd.DataFrame:
     """Station metadata, terrain, season and PowderBench climatology for each row."""
-    from . import NH_LEAGUES
+    from . import league_code
 
     global _TERRAIN
     if _TERRAIN is None:
@@ -249,7 +249,7 @@ def add_static(df: pd.DataFrame, st: pd.DataFrame, clim: pd.DataFrame, league: s
     doy = pd.to_datetime(df["round_date"]).dt.dayofyear
     df["doy"] = doy.clip(upper=365)
     df["doy_sin"], df["doy_cos"] = np.sin(2 * np.pi * doy / 365.25), np.cos(2 * np.pi * doy / 365.25)
-    df["league_code"] = NH_LEAGUES.index(league) if league in NH_LEAGUES else len(NH_LEAGUES)
+    df["league_code"] = league_code(league)
     if len(clim):
         c = clim.set_index(["station_id", "doy"])
         for h in HORIZONS:

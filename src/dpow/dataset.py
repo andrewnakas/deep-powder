@@ -19,7 +19,7 @@ from . import features, store, truth
 from .contract import climatology, stations
 
 SH_LEAGUES = ("era5", "resorts")
-HF_LEAGUES = ("stations", "observers", "alps")
+HF_LEAGUES = ("stations", "observers", "alps", "japan", "nordic", "world")
 KEYS = ["station_id", "round_date", "horizon_h"]
 
 
@@ -55,9 +55,16 @@ def assemble(ens: pd.DataFrame, det: pd.DataFrame, league: str) -> pd.DataFrame:
 
 
 def training_table(league: str) -> pd.DataFrame:
+    from . import NEW_LEAGUES
     from .ens_store import load
 
-    ens = load(league)
+    if league in NEW_LEAGUES:  # no sibling store there: every station from the archive (arch.py)
+        from . import arch
+
+        arch.pull([league])
+        ens = arch.load(league)
+    else:
+        ens = load(league)
     if ens.empty:
         return pd.DataFrame()
     det = det_rows(store.load_daily(league), league)
@@ -65,7 +72,10 @@ def training_table(league: str) -> pd.DataFrame:
     if league == "era5":
         tw = truth.windows(truth.era5_daily(stations(league), min(X["round_date"]), max(X["round_date"])))
     elif league in HF_LEAGUES:
-        tw = truth.windows(truth.hf_daily(league, begin=min(X["round_date"])))
+        daily = truth.hf_daily(league, begin=min(X["round_date"]))
+        if daily.empty:  # truth not exported yet
+            return pd.DataFrame()
+        tw = truth.windows(daily)
     else:  # resort leagues: PowderBench's own resolved rounds are the archive
         tw = truth.resolved_rounds(league)
     df = X.merge(tw, on=KEYS, how="inner")
