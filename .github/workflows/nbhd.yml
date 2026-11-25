@@ -15,6 +15,9 @@ on:
       source:
         description: "gfs, hrrr, gefs, wind, hsp or nbm"
         default: gfs
+      max_parallel:
+        description: "Jobs at once (the account shares about 20 runners)"
+        default: "20"
 
 permissions:
   contents: write
@@ -29,6 +32,7 @@ jobs:
     timeout-minutes: 345
     strategy:
       fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
       matrix:
         league: ${{ fromJSON(inputs.leagues) }}
         season: ${{ fromJSON(inputs.seasons) }}
