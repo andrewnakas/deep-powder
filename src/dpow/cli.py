@@ -477,6 +477,11 @@ def nbhd(league: str = typer.Option(...), season: int = typer.Option(0, help="0:
     from . import nbhd as nb
 
     nb = {"hrrr": hrrx, "gefs": gefx, "wind": wndx, "hsp": hsp, "nbm": nbmx}.get(source, nb)
+    if league not in getattr(nb, "LEAGUES", (league,)):
+        # its for_round returns nothing here, and the loop below would mark
+        # every round seen with no rows, so a later fix would never fill them
+        _summary(f"{source} {league}: not a league this source covers")
+        return
 
     use_pb_data()
     current = season == 0  # the newest season in the table, plus the days since its last round

@@ -24,7 +24,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from . import HORIZONS
+from . import HORIZONS, NEW_LEAGUES
 from .ens_features import init_for_round
 from .nbhd import OFFSETS, _local_hours
 
@@ -32,7 +32,7 @@ NAME = "gfs"
 PREFIX = "wndx"
 TAG = "nbhd"
 FILES = "wndx"
-LEAGUES = ("stations", "observers", "alps")
+LEAGUES = ("stations", "observers", "alps", *NEW_LEAGUES)  # GFS is global
 N_LEAD = 105
 VARS = ("precipitation_surface", "wind_u_100m", "wind_v_100m", "pressure_surface",
         "precipitable_water_atmosphere", "relative_humidity_2m", "temperature_80m")
