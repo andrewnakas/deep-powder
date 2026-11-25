@@ -296,7 +296,9 @@ def build(r: Round, network: bool = True, budget: float | None = None) -> Result
     except Exception as e:
         info["wndx_error"] = f"{type(e).__name__}: {str(e)[:120]}"
         print(f"  storm-wind features failed: {info['wndx_error']}", flush=True)
-    if used == "nh" and not new_league:  # the nh table has Open-Meteo's GFS filled from dynamical.org (dynom.py); so does X
+    # the nh table has Open-Meteo's GFS filled from dynamical.org (dynom.py),
+    # so X gets the same fill; new-league rows were trained without it
+    if used == "nh" and not new_league:
         X = _dynom_fill(X, r, reg.loc[ids], info)
 
     t0 = fallback.predict_ens(X)
