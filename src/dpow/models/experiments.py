@@ -353,6 +353,9 @@ def _newlg(aug: int):
     def f(df):
         from .. import NEW_LEAGUES, store
 
+        if df["league"].isin(NEW_LEAGUES).any():  # adopted: the base trains on them already
+            print("  newlg: the base table has the new leagues already", flush=True)
+            return {}
         bundle = "nh"
         store.pull("table", store.TABLE, f"{bundle}__*.parquet")
         files = [p for p in sorted(store.TABLE.glob(f"{bundle}__*.parquet")) if p.stem.split("__")[1] in NEW_LEAGUES]
