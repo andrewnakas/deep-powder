@@ -345,32 +345,51 @@ def _allst(frac: float):
     return f
 
 
-def _newlg(aug: int):
-    """The NEW_LEAGUES rows of the table release (every station, from arch.py)
-    added to the base. aug=1: trained on, never scored, so the score is the
-    base leagues' (does training on them help or hurt there?). aug=0: scored
-    too, so the breakdown gives each new league's own season-CV accuracy."""
-    def f(df):
-        from .. import NEW_LEAGUES, store
+def _new_rows(df):
+    """The NEW_LEAGUES rows of the table release (every station, from arch.py),
+    in the base table's columns and dtypes; None when there are none."""
+    from .. import NEW_LEAGUES, store
 
-        bundle = "nh"
-        store.pull("table", store.TABLE, f"{bundle}__*.parquet")
-        files = [p for p in sorted(store.TABLE.glob(f"{bundle}__*.parquet")) if p.stem.split("__")[1] in NEW_LEAGUES]
-        if not files:
-            print("  newlg: no new-league rows in the table release", flush=True)
+    bundle = "nh"
+    store.pull("table", store.TABLE, f"{bundle}__*.parquet")
+    files = [p for p in sorted(store.TABLE.glob(f"{bundle}__*.parquet")) if p.stem.split("__")[1] in NEW_LEAGUES]
+    if not files:
+        print("  newlg: no new-league rows in the table release", flush=True)
+        return None
+    extra = pd.concat([pd.read_parquet(p) for p in files], ignore_index=True)
+    extra["round_date"] = pd.to_datetime(extra["round_date"]).dt.date
+    extra = gbm.add_oof_ratio(extra)  # their own station ratios, out of season like the base's
+    extra = extra[[c for c in df.columns if c in extra]]
+    f64 = [c for c in extra.select_dtypes("float64").columns if c != "truth_in"]
+    extra[f64] = extra[f64].astype("float32")
+    for lg, g in extra.groupby("league"):
+        print(f"  newlg {lg}: {g['station_id'].nunique()} stations, {len(g)} rows, seasons "
+              f"{sorted(g['season'].unique().tolist())}", flush=True)
+    return extra
+
+
+def _newlg(aug: int):
+    """The new-league rows added to the base. aug=1: trained on, never scored,
+    so the score is the base leagues' (does training on them help or hurt
+    there?). aug=0: scored too, so the breakdown gives each new league's own
+    season-CV accuracy."""
+    def f(df):
+        extra = _new_rows(df)
+        if extra is None:
             return {}
-        extra = pd.concat([pd.read_parquet(p) for p in files], ignore_index=True)
-        extra["round_date"] = pd.to_datetime(extra["round_date"]).dt.date
-        extra = gbm.add_oof_ratio(extra)  # their own station ratios, out of season like the base's
-        extra = extra[[c for c in df.columns if c in extra]]
-        f64 = [c for c in extra.select_dtypes("float64").columns if c != "truth_in"]
-        extra[f64] = extra[f64].astype("float32")
-        for lg, g in extra.groupby("league"):
-            print(f"  newlg {lg}: {g['station_id'].nunique()} stations, {len(g)} rows, seasons "
-                  f"{sorted(g['season'].unique().tolist())}", flush=True)
         base = df.assign(aug=df["aug"] if "aug" in df else 0)
         return {"df": pd.concat([base, extra.assign(aug=aug)], ignore_index=True)}
     return f
+
+
+def _newonly(df):
+    """A model of the new leagues alone: trained and scored on their rows only,
+    so its per-league numbers compare with newlg's (trained on all six). The
+    pooled CV is theirs, not the base's: read the breakdown, not the delta.
+    newlg cost the base leagues 0.73 (newlg_aug, every fold down, 11-25), so
+    the new leagues would get their own model if it holds up alone."""
+    extra = _new_rows(df)
+    return {} if extra is None else {"df": extra.assign(aug=0)}
 
 
 def _then(*steps):
@@ -408,6 +427,7 @@ VARIANTS = {
     "ecens_old": _ecens_old,
     "newlg": _newlg(0),
     "newlg_aug": _newlg(1),
+    "newonly": _newonly,
     "allst25": _allst(0.25),
     "allst50": _allst(0.5),
     # the same on top of the adopted GFS fill (compare with gfs_fill, 46.42); the extra stations' rows
