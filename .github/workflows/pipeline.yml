@@ -16,8 +16,11 @@ on:
         description: "JSON list of level-1 learners"
         default: '["q50", "qlo", "qhi", "hurdle", "tweedie", "nn"]'
       bundle:
-        description: "Bundle"
+        description: "Bundle whose table is built"
         default: nh
+      bundles:
+        description: "JSON list of bundles trained (nl reads its rows from the nh table)"
+        default: '["nh", "nl"]'
 
 permissions:
   contents: write
@@ -52,19 +55,25 @@ jobs:
     timeout-minutes: 350
     strategy:
       fail-fast: false
+      max-parallel: 6  # the account shares its runners; nl's jobs are small
       matrix:
+        bundle: ${{ fromJSON(inputs.bundles || '["nh", "nl"]') }}
         learner: ${{ fromJSON(inputs.learners || '["q50", "qlo", "qhi", "hurdle", "tweedie", "nn"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: dpow oof --bundle "$BUNDLE" --learner "${{ matrix.learner }}"
+      - run: dpow oof --bundle "${{ matrix.bundle }}" --learner "${{ matrix.learner }}"
 
   stack:
     needs: oof
     if: always() && !cancelled() && contains(fromJSON('["all", "oof", "stack"]'), inputs.stage || 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        bundle: ${{ fromJSON(inputs.bundles || '["nh", "nl"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: dpow stack --bundle "$BUNDLE"
+      - run: dpow stack --bundle "${{ matrix.bundle }}"

@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import HORIZONS, NH_LEAGUES, OWN_BUNDLE_LEAGUES, PROXY_LEAGUE, QCOLS, ROOT, league_code
+from . import HORIZONS, NEW_LEAGUES, NH_LEAGUES, OWN_BUNDLE_LEAGUES, PROXY_LEAGUE, QCOLS, ROOT, league_code
 from .contract import Round, stations
 from .dataset import KEYS, assemble
 from .ens_features import features_for_init, init_for_round
@@ -37,7 +37,10 @@ SIBLING_MAX_AGE_H = 30.0
 
 
 def bundle_names(league: str) -> list[str]:
-    """Preference order: the league's own bundle, then its proxy's."""
+    """Preference order: the league's own bundle, then its proxy's. The new
+    leagues have their own (nl): pooled into nh they cost its leagues."""
+    if league in NEW_LEAGUES:
+        return ["nl"]
     names = [league] if league in OWN_BUNDLE_LEAGUES else []
     base = PROXY_LEAGUE.get(league, league)
     return names + (["nh"] if base in NH_LEAGUES else [])
@@ -269,7 +272,11 @@ def build(r: Round, network: bool = True, budget: float | None = None) -> Result
     ens = live_ensembles(r, reg.loc[ids], info)
     if ens.empty:
         raise RuntimeError("no forecast inputs (every dynamical.org archive failed)")
-    det = sibling_det(r, info)
+    # the new leagues' table rows have neither the sibling's Open-Meteo block
+    # nor the dynamical.org GFS fill (dynom harvests the older leagues only),
+    # so their live rows get neither: same inputs as the rows the model saw
+    new_league = r.league in NEW_LEAGUES
+    det = pd.DataFrame() if new_league else sibling_det(r, info)
     det = det.assign(round_date=r.round_date) if len(det) else det
     X = assemble(ens, det, r.league)
     try:  # hourly-GFS timing and neighbourhood (nbhd.py); the models take the gap when it fails
@@ -292,7 +299,9 @@ def build(r: Round, network: bool = True, budget: float | None = None) -> Result
     except Exception as e:
         info["wndx_error"] = f"{type(e).__name__}: {str(e)[:120]}"
         print(f"  storm-wind features failed: {info['wndx_error']}", flush=True)
-    if used == "nh":  # the nh table has Open-Meteo's GFS filled from dynamical.org (dynom.py); so does X
+    # the nh table has Open-Meteo's GFS filled from dynamical.org (dynom.py),
+    # so X gets the same fill; new-league rows were trained without it
+    if used == "nh" and not new_league:
         X = _dynom_fill(X, r, reg.loc[ids], info)
 
     t0 = fallback.predict_ens(X)

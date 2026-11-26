@@ -149,7 +149,7 @@ def test_league_codes_keep_the_old_values():
     assert len({league_code(lg) for lg in NEW_LEAGUES} | {0, 1, 2, 3}) == 4 + len(NEW_LEAGUES)
 
 
-def test_training_table_leaves_the_new_leagues_out(monkeypatch, tmp_path):
+def test_nh_and_nl_split_one_table_release(monkeypatch, tmp_path):
     from dpow import cli, store
 
     monkeypatch.setattr(store, "TABLE", tmp_path)
@@ -158,3 +158,4 @@ def test_training_table_leaves_the_new_leagues_out(monkeypatch, tmp_path):
         pd.DataFrame({"station_id": ["A"], "round_date": ["2025-01-02"], "horizon_h": [24], "league": [lg],
                       "season": [2024], "truth_in": [1.0]}).to_parquet(tmp_path / f"nh__{lg}__2024.parquet")
     assert sorted(cli._table("nh")["league"]) == ["alps", "stations"]
+    assert sorted(cli._table("nl")["league"]) == ["japan", "nordic"]

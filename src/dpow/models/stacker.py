@@ -150,7 +150,8 @@ def _scale(g: pd.DataFrame, point: np.ndarray) -> dict[float, float]:
 # 2026-11-16 it was worth +0.1 pooled, +1.0 at 24 h and -0.2 in. MAE on 6+ in. days.
 L2_INPUTS = ("q10", "q25", "q50", "q75", "q90", "mean", "p_wet", "p_ge1", "p_ge6", "horizon_h", "climo_p50",
              "ref_snow")
-L2_LEAGUES = ("alps", "observers", "stations")
+# appended, never reordered: the codes of the first three must not change
+L2_LEAGUES = ("alps", "observers", "stations", "japan", "nordic", "world")
 L2_PARAMS = dict(objective="quantile", alpha=0.5, learning_rate=0.05, num_leaves=31, min_child_samples=300,
                  feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, lambda_l2=5.0, verbose=-1)
 L2_ROUNDS = 300
