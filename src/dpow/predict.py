@@ -37,10 +37,13 @@ SIBLING_MAX_AGE_H = 30.0
 
 
 def bundle_names(league: str) -> list[str]:
-    """Preference order: the league's own bundle, then its proxy's."""
+    """Preference order: the league's own bundle, then its proxy's. The new
+    leagues have their own (nl): pooled into nh they cost its leagues."""
+    if league in NEW_LEAGUES:
+        return ["nl"]
     names = [league] if league in OWN_BUNDLE_LEAGUES else []
     base = PROXY_LEAGUE.get(league, league)
-    return names + (["nh"] if base in NH_LEAGUES or base in NEW_LEAGUES else [])
+    return names + (["nh"] if base in NH_LEAGUES else [])
 
 
 def load_bundle(league: str) -> tuple[str | None, gbm.Bundle | None]:

@@ -5,9 +5,9 @@ from dpow.models import stacker
 from dpow.predict import bundle_names
 
 
-def test_new_leagues_use_the_nh_model():
+def test_new_leagues_have_their_own_model():
     for lg in NEW_LEAGUES:
-        assert bundle_names(lg) == ["nh"]
+        assert bundle_names(lg) == ["nl"]
     assert bundle_names("stations") == ["nh"]
     assert bundle_names("resorts-na") == ["resorts-na", "nh"]
 

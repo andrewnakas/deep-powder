@@ -22,11 +22,15 @@ POWDER_IN = 6.0
 # flavour of the NH model and learns per-resort bias online, until enough of
 # its own resolved rounds exist for a `resorts-na` bundle.
 NH_LEAGUES = ("stations", "observers", "alps")
-# Leagues in the NH training table with every-station archive features from
-# arch.py and truth from the Hugging Face export, trained on and submitted to
-# with the nh model since experiment `newlg` passed. Their rows have no
+# Leagues built into the NH table release (every-station archive features
+# from arch.py, truth from the Hugging Face export) but modelled apart: pooled
+# into nh they cost its leagues 0.73 (experiment newlg_aug, every fold down,
+# 2026-11-25), so they get their own bundle, `nl`. Their rows have no
 # Open-Meteo block and no dynom GFS fill, in the table and live alike.
 NEW_LEAGUES = ("japan", "nordic", "world")
+# Bundles read from another bundle's table release: bundle -> (release
+# prefix, leagues). nh's build holds the new leagues' rows; nl trains on them.
+TABLE_VIEWS = {"nh": ("nh", NH_LEAGUES), "nl": ("nh", NEW_LEAGUES)}
 # the `league_code` feature: the NH leagues keep the codes they always had,
 # every other league shares 3 (as before), the new ones follow
 LEAGUE_CODES = {"stations": 0, "observers": 1, "alps": 2, "japan": 4, "nordic": 5, "world": 6}

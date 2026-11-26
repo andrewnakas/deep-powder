@@ -166,21 +166,25 @@ def _build(bundle: str):
 
 def _table(bundle: str, columns: list[str] | None = None, rebuild: bool = False):
     """The table from the `table` release (one parquet per league and season),
-    or built on the spot when the release has none for this bundle. The
-    NEW_LEAGUES rows are trained on like the rest since experiment newlg
-    passed (see METHOD.md)."""
+    or built on the spot when the release has none for this bundle. A bundle
+    in TABLE_VIEWS reads only its leagues' files of the release it names: nh
+    leaves the new leagues out, nl takes only them."""
     import pandas as pd
 
-    from . import store
+    from . import TABLE_VIEWS, store
 
+    src, leagues = TABLE_VIEWS.get(bundle, (bundle, None))
     if not rebuild:
-        store.pull("table", store.TABLE, f"{bundle}__*.parquet")
-        files = sorted(store.TABLE.glob(f"{bundle}__*.parquet"))
+        store.pull("table", store.TABLE, f"{src}__*.parquet")
+        files = sorted(f for f in store.TABLE.glob(f"{src}__*.parquet")
+                       if leagues is None or f.stem.split("__")[1] in leagues)
         if files:
             df = pd.concat([pd.read_parquet(f, columns=columns) for f in files], ignore_index=True)
             df["round_date"] = pd.to_datetime(df["round_date"]).dt.date
             return df
-    df = _build(bundle)
+    df = _build(src)
+    if df is not None and leagues is not None:
+        df = df[df["league"].isin(leagues)].reset_index(drop=True)
     return df if df is None or columns is None else df[[c for c in columns if c in df]]
 
 
@@ -188,8 +192,12 @@ def _table(bundle: str, columns: list[str] | None = None, rebuild: bool = False)
 def table(bundle: str = typer.Option("nh", help="nh (stations+observers+alps), era5, resorts or resorts-na")):
     """Build the training table and publish it to the `table` release, so no
     training job (here or off Actions) has to rebuild it."""
-    from . import store
+    from . import TABLE_VIEWS, store
 
+    src = TABLE_VIEWS.get(bundle, (bundle,))[0]
+    if src != bundle:
+        _summary(f"table {bundle}: its rows are in the {src} table; build that one")
+        return
     df = _build(bundle)
     if df is None:
         _summary(f"table {bundle}: no data yet")
