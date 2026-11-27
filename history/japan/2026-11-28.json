@@ -1,11 +1,11 @@
 {
  "bundle": "nl stack",
  "cycle": "2026-11-27T00Z",
- "final": false,
- "merged": true,
- "pr": "https://github.com/andrewnakas/powderbench/pull/1178",
- "submissions": 3,
- "submitted_utc": "2026-11-27T07:05:31+00:00",
+ "final": true,
+ "merged": false,
+ "pr": "https://github.com/andrewnakas/powderbench/pull/1202",
+ "submissions": 4,
+ "submitted_utc": "2026-11-27T08:41:45+00:00",
  "tiers": {
   "s1": 795
  },
